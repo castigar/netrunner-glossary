@@ -37,12 +37,19 @@ still writes every asset, but ``glossary.json`` records
 ``"llm_judged": false`` and keeps the statistical candidates unadjudicated.
 The batch never invents judgments it did not make: an unadjudicated glossary is
 labelled as such so a downstream consumer can refuse it.
+
+Judgments are checkpointed to ``judgments.jsonl`` in the output directory as
+each chunk completes, and progress is reported to stderr.  A killed run resumes
+from the checkpoint rather than restarting, and a run that is merely slow is
+distinguishable from one that is failing every call.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -54,13 +61,28 @@ from pattern_extractor import extract_patterns, write_patterns_json
 from subtype_extractor import extract_subtype_pairs, to_term_pairs
 from term_candidate_extractor import DEFAULT_TOP_N, generate_candidates
 from term_extraction_eval import evaluate_extraction, load_gold_subtypes
+from term_judge import DEFAULT_CHUNK_SIZE, DEFAULT_MAX_CONCURRENCY
 
 DEFAULT_MIN_COOCCUR = 5
 DEFAULT_MIN_PATTERN_COUNT = 3
 
 
+BEDROCK_JUDGE_MODEL = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+
 def _ko_translations_dir(corpus_root: Path) -> Path:
     return corpus_root / "v2" / "translations" / "ko"
+
+
+def _build_bedrock_llm(model_id: str) -> Any:
+    """Build the Bedrock chat model used for step 5 accept/reject judgment.
+
+    Haiku is the right tier here: step 5 is a few thousand independent yes/no
+    classifications, not reasoning.  AWS credentials come from the environment.
+    """
+    from langchain_aws import ChatBedrockConverse
+
+    return ChatBedrockConverse(model=model_id, temperature=0)
 
 
 def _candidate_to_term_pair(candidate: Any) -> dict:
@@ -83,6 +105,9 @@ def build_assets(
     min_cooccur: int = DEFAULT_MIN_COOCCUR,
     min_pattern_count: int = DEFAULT_MIN_PATTERN_COUNT,
     top_n: int | None = DEFAULT_TOP_N,
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    progress: bool = False,
 ) -> dict:
     """Run the phase-1 asset build and write glossary/patterns/conflicts JSON.
 
@@ -95,6 +120,10 @@ def build_assets(
         min_cooccur:       minimum cooccurrence for a rule-path term candidate.
         min_pattern_count: minimum occurrences for a sentence template.
         top_n:             Dice cap on the rule path.  None removes the cap.
+        max_concurrency:   Parallel in-flight LLM requests in step 5.  Ignored
+                           when *llm* is None.
+        chunk_size:        Candidates per checkpointed batch in step 5.
+        progress:          When True, print step-5 chunk progress to stderr.
 
     Returns:
         A summary dict with the counts at each stage and the written paths.
@@ -130,12 +159,48 @@ def build_assets(
 
     # 5. LLM adjudication of the rule path, only when a model was supplied.
     llm_judged = False
+    judged_counts: dict[str, int] = {}
     if llm is not None:
         from term_judge import judge_candidates
 
-        accepted_judgments, _rejected = judge_candidates(candidates, llm)
+        submitted = len(candidates)
+        started = time.monotonic()
+
+        def report(stats: dict) -> None:
+            elapsed = time.monotonic() - started
+            done, total = stats["done"], stats["total"]
+            rate = done / elapsed if elapsed > 0 else 0.0
+            eta = (total - done) / rate / 60 if rate > 0 else float("inf")
+            errors = stats["errors"]
+            print(
+                f"  judged {done}/{total}"
+                f"  accepted={stats['accepted']}"
+                f"  rejected={stats['rejected']}"
+                f"  dropped={stats['dropped']}"
+                f"  {rate:.2f}/s  eta {eta:.0f}m"
+                + (f"  errors={errors}" if errors else ""),
+                file=sys.stderr,
+                flush=True,
+            )
+
+        accepted_judgments, rejected_judgments = judge_candidates(
+            candidates,
+            llm,
+            max_concurrency=max_concurrency,
+            chunk_size=chunk_size,
+            checkpoint_path=out_dir / "judgments.jsonl",
+            on_progress=report if progress else None,
+        )
         accepted = {(j.en_term, j.ko_term) for j in accepted_judgments if j.accepted}
         candidates = [c for c in candidates if (c.en_term, c.ko_term) in accepted]
+        judged_counts = {
+            "submitted": submitted,
+            "accepted": len(accepted_judgments),
+            "rejected": len(rejected_judgments),
+            # Candidates whose call still failed after retries.  Reported rather
+            # than folded into "rejected": the model never judged them.
+            "dropped": submitted - len(accepted_judgments) - len(rejected_judgments),
+        }
         llm_judged = True
 
     # 6. Conflicts are held back from the glossary until a human resolves them.
@@ -155,6 +220,7 @@ def build_assets(
         "generated_at": datetime.now(UTC).isoformat(),
         "corpus_root": str(corpus_root),
         "llm_judged": llm_judged,
+        "judged_counts": judged_counts,
         "official": official.all_terms(),
         "subtype_extracted": subtype_conflicts.clean,
         "extracted": conflict_result.clean,
@@ -198,6 +264,7 @@ def build_assets(
         "conflicts": len(conflict_result.conflicts),
         "patterns": len(patterns),
         "llm_judged": llm_judged,
+        "judged_counts": judged_counts,
         "paths": {
             "glossary": str(glossary_path),
             "patterns": str(patterns_path),
@@ -221,6 +288,35 @@ def main() -> None:
         "--min-pattern-count", type=int, default=DEFAULT_MIN_PATTERN_COUNT
     )
     parser.add_argument(
+        "--judge-model",
+        nargs="?",
+        const=BEDROCK_JUDGE_MODEL,
+        default=None,
+        help=(
+            "run step 5 LLM adjudication on Bedrock; bare flag uses "
+            f"{BEDROCK_JUDGE_MODEL}. Omitted, the glossary stays llm_judged=false."
+        ),
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=DEFAULT_CHUNK_SIZE,
+        help=(
+            "candidates per checkpointed batch for --judge-model. Judgments are "
+            "appended to <out-dir>/judgments.jsonl after each chunk, so a killed "
+            "run resumes instead of restarting."
+        ),
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=DEFAULT_MAX_CONCURRENCY,
+        help=(
+            "parallel in-flight requests for --judge-model. Raise it only with "
+            "evidence: a run reporting dropped=0 saw no throttling at its level."
+        ),
+    )
+    parser.add_argument(
         "--top-n",
         type=int,
         default=DEFAULT_TOP_N,
@@ -231,12 +327,18 @@ def main() -> None:
     if not args.corpus_root:
         raise SystemExit("CORPUS_ROOT is not set and --corpus-root was not given")
 
+    llm = _build_bedrock_llm(args.judge_model) if args.judge_model else None
+
     summary = build_assets(
         args.corpus_root,
         args.out_dir,
+        llm=llm,
         min_cooccur=args.min_cooccur,
         min_pattern_count=args.min_pattern_count,
         top_n=args.top_n or None,
+        max_concurrency=args.max_concurrency,
+        chunk_size=args.chunk_size,
+        progress=bool(args.judge_model),
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if not summary["llm_judged"]:

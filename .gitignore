@@ -5,3 +5,6 @@ __pycache__/
 # 상위 저장소의 .env가 이 public repo에 절대 들어가지 않도록
 .env
 *.env
+
+# 판정 체크포인트 — 재개용 작업 파일이지 자산이 아니다
+assets/judgments.jsonl

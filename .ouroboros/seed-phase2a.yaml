@@ -6,11 +6,19 @@ task_type: code
 brownfield_context:
   project_type: brownfield
   context_references:
-  - mini_pjt/SERVICE.md — 단일 진실 원천
-  - castigar/netrunner-glossary, 브랜치 ooo/orch_a6bc6099bdae, HEAD 7026260
-  - 워크트리 C:\Users\SDS\.ouroboros\worktrees\mini_pjt\orch_a6bc6099bdae
-  - assets/glossary.json · assets/patterns.json · assets/conflicts.json — phase1 산출물, 이 페이즈의 입력
-  - .ouroboros/seed-phase1.yaml — 선행 페이즈 사양
+  - path: C:\Users\SDS\.ouroboros\worktrees\mini_pjt\orch_a6bc6099bdae
+    role: primary
+    summary: 'netrunner-glossary, 브랜치 ooo/orch_a6bc6099bdae. phase1 산출물이 여기 있다: src/ 모듈 13개, tests/ 211개
+      통과, assets/glossary.json(공식 160 + 부제 68 + 룰 123, llm_judged=true) · assets/patterns.json · assets/conflicts.json(항목마다
+      source로 subtype 12건과 rule 13건을 구분). 2단계 온라인 경로를 여기에 새 모듈로 추가한다.'
+  - path: C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json
+    role: reference
+    summary: 원본 코퍼스. Null Signal Games의 공개 repo이며 팀 소유가 아니므로 쓰기를 하지 않는다. CORPUS_ROOT 환경변수로 주입되고 경로를 코드에
+      하드코딩하지 않는다.
+  - path: C:\Users\SDS\Desktop\sds-ax-practice\day7_practice
+    role: reference
+    summary: 재사용할 골격. final_scenario.py(그래프), local_tracer.py(트레이스 콜백), mcp_server.py(MCP 서버), guards_input.py(가드레일),
+      llm_judge.py·run_eval.py(평가).
   existing_patterns:
   - 'src/ 모듈 13개가 이미 있다: build_assets.py, conflict_detector.py, corpus_split.py, filter_untranslated.py,
     ko_morphology.py, load_official_glossary.py, pattern_extractor.py, subtype_extractor.py, term_candidate_extractor.py,
@@ -18,6 +26,8 @@ brownfield_context:
   - 테스트 211개가 통과 상태이며 pytest로 실행한다 (pyproject.toml의 pythonpath=['src']).
   - 기존 모듈을 다시 만들지 않는다. 2단계 온라인 경로를 새 모듈로 추가하고 tm_index.HybridTMIndex.search()와 glossary.json을 그대로 소비한다.
   - '회귀 감시선: tests/test_tm_baseline.py가 TM-only 베이스라인 중앙값을 0.385 +/- 0.025로 고정한다. 이 테스트를 완화하지 않는다.'
+  - 단일 진실 원천은 mini_pjt/SERVICE.md이며 사양 해석이 갈리면 이 문서를 따른다.
+  - 선행 페이즈 사양은 .ouroboros/seed-phase1.yaml에 있다.
   existing_dependencies:
   - numpy>=1.26
   - rank-bm25>=0.2.2

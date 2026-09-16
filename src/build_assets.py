@@ -19,9 +19,11 @@ Pipeline order is fixed by SERVICE.md §6 and the order matters:
 4. Extract terms on **two separate paths** (SERVICE.md §6, 결정 ①):
    - 부제 경로: the ``keywords`` field, positionally aligned EN<->KO.  Candidates
      are whole field elements, so the 88-entry gold set scores it directly.
-   - 룰 경로: the ``text`` field, n-gram statistics capped at the top *top_n* by
-     Dice.  Uncapped this yields ~76k candidates, at which scale LLM
-     adjudication is meaningless before it is expensive.
+   - 룰 경로: the ``text`` field, n-gram statistics capped in two stages — the
+     most frequent EN terms, then their best KO candidates by Dice.  Uncapped
+     this yields ~75k candidates, at which scale LLM adjudication is
+     meaningless before it is expensive.  A single global Dice cap was tried
+     first and cut almost every real term; see term_candidate_extractor.
    Running both through one path was the original defect: noise n-grams
    collided with each other and buried the 68 real subtype terms under 1,822
    spurious conflicts.
@@ -59,7 +61,11 @@ from corpus_split import load_clean_corpus
 from load_official_glossary import load_official_glossary
 from pattern_extractor import extract_patterns, write_patterns_json
 from subtype_extractor import extract_subtype_pairs, to_term_pairs
-from term_candidate_extractor import DEFAULT_TOP_N, generate_candidates
+from term_candidate_extractor import (
+    DEFAULT_MAX_EN_TERMS,
+    DEFAULT_TOP_K_PER_EN,
+    generate_candidates,
+)
 from term_extraction_eval import evaluate_extraction, load_gold_subtypes
 from term_judge import DEFAULT_CHUNK_SIZE, DEFAULT_MAX_CONCURRENCY
 
@@ -104,7 +110,8 @@ def build_assets(
     llm: Any | None = None,
     min_cooccur: int = DEFAULT_MIN_COOCCUR,
     min_pattern_count: int = DEFAULT_MIN_PATTERN_COUNT,
-    top_n: int | None = DEFAULT_TOP_N,
+    max_en_terms: int | None = DEFAULT_MAX_EN_TERMS,
+    top_k_per_en: int | None = DEFAULT_TOP_K_PER_EN,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     progress: bool = False,
@@ -119,7 +126,9 @@ def build_assets(
                            is flagged ``llm_judged: false``.
         min_cooccur:       minimum cooccurrence for a rule-path term candidate.
         min_pattern_count: minimum occurrences for a sentence template.
-        top_n:             Dice cap on the rule path.  None removes the cap.
+        max_en_terms:      Rule-path cap, stage 1 — EN terms kept, by frequency.
+        top_k_per_en:      Rule-path cap, stage 2 — KO candidates kept per EN
+                           term, by Dice.
         max_concurrency:   Parallel in-flight LLM requests in step 5.  Ignored
                            when *llm* is None.
         chunk_size:        Candidates per checkpointed batch in step 5.
@@ -152,7 +161,12 @@ def build_assets(
     subtype_eval = evaluate_extraction(subtype_result.pairs, gold_subtypes)
 
     # 4b. 룰 경로 — text field n-grams, capped at top_n by Dice.  Zero LLM calls.
-    candidates = generate_candidates(corpus, min_cooccur=min_cooccur, top_n=top_n)
+    candidates = generate_candidates(
+        corpus,
+        min_cooccur=min_cooccur,
+        max_en_terms=max_en_terms,
+        top_k_per_en=top_k_per_en,
+    )
     candidates = [
         c for c in candidates if c.en_term.lower() not in official.excluded_ids
     ]
@@ -317,10 +331,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--top-n",
+        "--max-en-terms",
         type=int,
-        default=DEFAULT_TOP_N,
-        help="rule-path Dice cap; 0 removes the cap (~76k candidates)",
+        default=DEFAULT_MAX_EN_TERMS,
+        help="rule-path cap stage 1: EN terms kept, by frequency; 0 removes it",
+    )
+    parser.add_argument(
+        "--top-k-per-en",
+        type=int,
+        default=DEFAULT_TOP_K_PER_EN,
+        help="rule-path cap stage 2: KO candidates per EN term, by Dice; 0 removes it",
     )
     args = parser.parse_args()
 
@@ -335,7 +355,8 @@ def main() -> None:
         llm=llm,
         min_cooccur=args.min_cooccur,
         min_pattern_count=args.min_pattern_count,
-        top_n=args.top_n or None,
+        max_en_terms=args.max_en_terms or None,
+        top_k_per_en=args.top_k_per_en or None,
         max_concurrency=args.max_concurrency,
         chunk_size=args.chunk_size,
         progress=bool(args.judge_model),

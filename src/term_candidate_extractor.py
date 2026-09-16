@@ -11,11 +11,23 @@ Algorithm:
   3. Compute Dice coefficient = 2 * cooccur(A,B) / (freq(A) + freq(B)).
   4. Compute PMI = log2(P(A,B) / (P(A) * P(B))).
   5. Keep only pairs with cooccurrence >= min_cooccur (default 5).
-  6. Sort by Dice score descending and keep the top *top_n*.
+  6. Cap in two stages: pick the *max_en_terms* most frequent EN terms, then the
+     *top_k_per_en* highest-Dice KO candidates within each of them.
 
-룰 경로에는 Dice 상위 N개 상한을 둔다 (SERVICE.md §6, 결정 ②).  상한 없이는
-min_cooccur만 남아 76,309개가 나오고, 그 규모로는 LLM 판정이 비용 이전에 무의미하다.
-상한은 판정 예산이지 품질 게이트가 아니다 — 잡음 후보를 실제로 걱러내는 것은
+왜 두 단계인가 (SERVICE.md §6, 결정 ② 개정)
+-------------------------------------------
+원안은 "Dice 상위 N개 상한"이었는데, 실측 결과 그 순위가 진짜 용어를 잘라냈다.
+전체 후보에서 install→설치는 17,436위, trash→폐기는 55,471위로 상위 5,000 밖이었다.
+
+원인은 Dice의 정의다. ``2·공기빈도/(EN빈도+KO빈도)``이므로 널리 쓰이는 핵심 용어일수록
+분모가 커져 점수가 떨어진다. 딱 몇 장에서만 같이 나오고 다른 데선 안 나오는 희귀
+문구 쌍이 Dice 1.0을 받는다. **Dice는 배타성을 재지 용어다움을 재지 않는다.**
+
+다만 Dice는 **하나의 EN 용어 안에서는** 잘 작동한다. trash의 후보들을 보면
+폐기한다 0.796 vs 수 0.269 / 있다 0.242로 정답과 잡음이 뚜렷이 갈린다.
+그래서 EN 용어 선정은 빈도로, 그 안의 역어 선정은 Dice로 한다.
+
+상한은 판정 예산이지 품질 게이트가 아니다 — 잡음 후보를 실제로 걸러내는 것은
 term_judge의 가부 판정이다.
 
 부제 추출은 이 모듈이 아니라 subtype_extractor가 담당한다.
@@ -28,26 +40,52 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 
+_MARKUP = re.compile(r"</?[a-zA-Z][^>]*>")
+
+
 def _extract_en_ngrams(text: str, max_n: int = 3) -> list[str]:
     """Extract 1..max_n word n-grams from lowercased EN text.
 
-    Game symbols like [credit] are kept as single tokens.
+    Game symbols like [credit] are kept as single tokens.  Markup is stripped
+    first, because the word-character pattern below turns '<strong>' into the
+    word 'strong', which polluted 208 EN terms with things like
+    '1 strong barrier'.  SERVICE.md §5 already excludes <strong>/<em> from
+    gate 2 for the same reason — it is notation, not text.
     """
-    tokens = re.findall(r"\[[^\]]+\]|\w+", text.lower())
+    tokens = re.findall(r"\[[^\]]+\]|\w+", _MARKUP.sub(" ", text).lower())
     ngrams: list[str] = []
     for n in range(1, max_n + 1):
         for i in range(len(tokens) - n + 1):
             ngrams.append(" ".join(tokens[i : i + n]))
     return ngrams
+
+
+# Edge punctuation to shed.  Brackets are deliberately absent: '[credit]' is a
+# game symbol, and stripping it to 'credit' would both destroy the symbol and
+# collide with the English word.
+_KO_EDGE_PUNCT = ".,:;!?\"'()"
+
+
+def _normalize_ko_token(token: str) -> str:
+    """Strip markup and edge punctuation from one eojeol, keeping symbols intact.
+
+    KO text is whitespace-split, so '있다.' and '있다' were counted as different
+    terms and their cooccurrence was split between them.  Over the clean corpus
+    this collapses 2,619 surface forms to 2,407.
+    """
+    return _MARKUP.sub("", token).strip(_KO_EDGE_PUNCT)
 
 
 def _extract_ko_eojeol_ngrams(text: str, max_n: int = 3) -> list[str]:
     """Extract 1..max_n eojeol n-grams from KO text.
 
-    Korean eojeol (어절) are whitespace-delimited units.
-    Game symbols and digits within brackets are preserved.
+    Korean eojeol (어절) are whitespace-delimited units, normalized to shed
+    markup and edge punctuation.  Game symbols like [credit] are preserved.
+
+    Particles (조사) are left attached — separating them needs a morphological
+    analyzer, which this pipeline does not have.
     """
-    tokens = text.split()
+    tokens = [t for t in (_normalize_ko_token(t) for t in text.split()) if t]
     ngrams: list[str] = []
     for n in range(1, max_n + 1):
         for i in range(len(tokens) - n + 1):
@@ -55,7 +93,8 @@ def _extract_ko_eojeol_ngrams(text: str, max_n: int = 3) -> list[str]:
     return ngrams
 
 
-DEFAULT_TOP_N = 5000
+DEFAULT_MAX_EN_TERMS = 1500
+DEFAULT_TOP_K_PER_EN = 3
 
 
 @dataclass(frozen=True)
@@ -75,7 +114,8 @@ def generate_candidates(
     ko_field: str = "ko_text",
     max_n: int = 3,
     min_cooccur: int = 5,
-    top_n: int | None = DEFAULT_TOP_N,
+    max_en_terms: int | None = DEFAULT_MAX_EN_TERMS,
+    top_k_per_en: int | None = DEFAULT_TOP_K_PER_EN,
 ) -> list[TermCandidate]:
     """Generate term candidates using only corpus statistics — 0 LLM calls.
 
@@ -85,12 +125,14 @@ def generate_candidates(
         ko_field:     Key for the KO translation text in each pair dict.
         max_n:        Maximum n-gram length (default 3).
         min_cooccur:  Minimum cooccurrence count threshold (default 5).
-        top_n:        Keep only the *top_n* highest-Dice pairs. None removes the
-                      cap, which on the full corpus yields ~76k candidates.
+        max_en_terms: Keep only the *max_en_terms* EN terms with the highest
+                      cooccurrence. None keeps every EN term.
+        top_k_per_en: Within each kept EN term, keep its *top_k_per_en* highest
+                      Dice candidates. None keeps every candidate.
 
     Returns:
-        List of TermCandidate, sorted by Dice coefficient descending, truncated
-        to *top_n*.  Only pairs whose cooccurrence >= *min_cooccur* are returned.
+        List of TermCandidate, sorted by Dice coefficient descending.  Only pairs
+        whose cooccurrence >= *min_cooccur* survive, then the two-stage cap.
 
     Note:
         This function makes **zero** LLM API calls. All computation is
@@ -146,9 +188,41 @@ def generate_candidates(
             )
         )
 
-    # Ties on Dice are common (many pairs sit at 1.0), so break them
-    # deterministically instead of letting the cap depend on dict ordering.
-    candidates.sort(key=lambda c: (-c.dice, -c.cooccurrence, c.en_term, c.ko_term))
-    if top_n is not None:
-        candidates = candidates[:top_n]
-    return candidates
+    return _apply_cap(candidates, max_en_terms, top_k_per_en)
+
+
+def _apply_cap(
+    candidates: list[TermCandidate],
+    max_en_terms: int | None,
+    top_k_per_en: int | None,
+) -> list[TermCandidate]:
+    """Two-stage cap: frequent EN terms, then their best KO candidates by Dice.
+
+    Ties are broken deterministically throughout, so the cut never depends on
+    dict ordering.
+    """
+    by_en: dict[str, list[TermCandidate]] = defaultdict(list)
+    for candidate in candidates:
+        by_en[candidate.en_term].append(candidate)
+
+    # Stage 1 — EN terms by how often they occur, not by Dice.  An EN term's
+    # cooccurrence with its best KO candidate is the available frequency proxy.
+    ranked_en = sorted(
+        by_en,
+        key=lambda en: (-max(c.cooccurrence for c in by_en[en]), en),
+    )
+    if max_en_terms is not None:
+        ranked_en = ranked_en[:max_en_terms]
+
+    # Stage 2 — within one EN term, Dice separates the translation from the
+    # sentence scaffolding it happens to sit next to.
+    kept: list[TermCandidate] = []
+    for en in ranked_en:
+        group = sorted(
+            by_en[en],
+            key=lambda c: (-c.dice, -c.cooccurrence, c.ko_term),
+        )
+        kept.extend(group if top_k_per_en is None else group[:top_k_per_en])
+
+    kept.sort(key=lambda c: (-c.dice, -c.cooccurrence, c.en_term, c.ko_term))
+    return kept

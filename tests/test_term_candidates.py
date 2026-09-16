@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from collections import Counter
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -358,7 +360,7 @@ def test_build_judge_chain_uses_pydantic_structured_output():
     )
 
 
-# ---------- Dice top-N cap (SERVICE.md §6, 결정 ②) ----------
+# ---------- two-stage cap (SERVICE.md §6, 결정 ② 개정) ----------
 
 
 def _cap_fixture(n_pairs=60):
@@ -369,42 +371,129 @@ def _cap_fixture(n_pairs=60):
     ]
 
 
-def test_top_n_truncates_to_the_cap():
+def _uncapped(pairs):
+    return generate_candidates(
+        pairs, min_cooccur=1, max_en_terms=None, top_k_per_en=None
+    )
+
+
+def test_max_en_terms_limits_distinct_en_terms():
     pairs = _cap_fixture()
-    uncapped = generate_candidates(pairs, min_cooccur=1, top_n=None)
-    assert len(uncapped) > 5
-    assert len(generate_candidates(pairs, min_cooccur=1, top_n=5)) == 5
+    assert len({c.en_term for c in _uncapped(pairs)}) > 3
+    capped = generate_candidates(pairs, min_cooccur=1, max_en_terms=3)
+    assert len({c.en_term for c in capped}) == 3
 
 
-def test_top_n_keeps_the_highest_dice():
+def test_top_k_per_en_limits_candidates_within_each_en_term():
     pairs = _cap_fixture()
-    uncapped = generate_candidates(pairs, min_cooccur=1, top_n=None)
-    capped = generate_candidates(pairs, min_cooccur=1, top_n=5)
-    assert capped == uncapped[:5]
-    assert min(c.dice for c in capped) >= max(c.dice for c in uncapped[5:])
+    capped = generate_candidates(pairs, min_cooccur=1, top_k_per_en=2)
+    counts = Counter(c.en_term for c in capped)
+    assert counts and max(counts.values()) <= 2
 
 
-def test_top_n_none_removes_the_cap():
+def test_stage_two_keeps_the_highest_dice_within_an_en_term():
     pairs = _cap_fixture()
-    assert len(generate_candidates(pairs, min_cooccur=1, top_n=None)) > 5
+    full = _uncapped(pairs)
+    best = max(c.dice for c in full if c.en_term == "alpha")
+    capped = generate_candidates(pairs, min_cooccur=1, top_k_per_en=1)
+    assert [c.dice for c in capped if c.en_term == "alpha"] == [best]
 
 
-def test_top_n_larger_than_population_is_harmless():
+def test_en_terms_are_selected_by_frequency_not_dice():
+    """The defect being fixed: a global Dice cut drops frequent real terms.
+
+    This is trash→폐기한다 in miniature.  A real term's KO rendering also shows up
+    on cards that do not carry the EN term, which inflates Dice's denominator;
+    a rare pair that occurs together and nowhere else scores a perfect 1.0.
+    Ranking EN terms by Dice therefore prefers the rare artifact.
+    """
+    pairs = [{"en_text": "common", "ko_text": "공통"} for _ in range(40)]
+    pairs += [{"en_text": "filler", "ko_text": "공통"} for _ in range(20)]
+    pairs += [{"en_text": "rare", "ko_text": "희귀"} for _ in range(2)]
+
+    full = _uncapped(pairs)
+    best = {}
+    for c in full:
+        best[c.en_term] = max(best.get(c.en_term, 0.0), c.dice)
+    assert best["rare"] > best["common"], "fixture must reproduce the inversion"
+
+    kept = {c.en_term for c in generate_candidates(pairs, min_cooccur=1, max_en_terms=1)}
+    assert kept == {"common"}, "stage 1 must rank by frequency, not by Dice"
+
+
+def test_none_removes_each_stage():
     pairs = _cap_fixture()
-    uncapped = generate_candidates(pairs, min_cooccur=1, top_n=None)
-    assert generate_candidates(pairs, min_cooccur=1, top_n=10**6) == uncapped
+    full = _uncapped(pairs)
+    assert len(generate_candidates(pairs, min_cooccur=1, max_en_terms=None,
+                                   top_k_per_en=None)) == len(full)
+
+
+def test_cap_larger_than_population_is_harmless():
+    pairs = _cap_fixture()
+    assert generate_candidates(
+        pairs, min_cooccur=1, max_en_terms=10**6, top_k_per_en=10**6
+    ) == _uncapped(pairs)
 
 
 def test_cap_is_deterministic_across_runs():
     """Dice ties are common, so the cut must not depend on dict ordering."""
     pairs = _cap_fixture()
-    first = generate_candidates(pairs, min_cooccur=1, top_n=5)
+    first = generate_candidates(pairs, min_cooccur=1, max_en_terms=3, top_k_per_en=2)
     for _ in range(3):
-        assert generate_candidates(pairs, min_cooccur=1, top_n=5) == first
+        assert generate_candidates(
+            pairs, min_cooccur=1, max_en_terms=3, top_k_per_en=2
+        ) == first
 
 
-def test_default_applies_a_cap():
-    """The default must not be 'unlimited' — that is the defect being fixed."""
-    from term_candidate_extractor import DEFAULT_TOP_N
+def test_defaults_apply_a_cap():
+    """The defaults must not be 'unlimited' — that is the defect being fixed."""
+    from term_candidate_extractor import DEFAULT_MAX_EN_TERMS, DEFAULT_TOP_K_PER_EN
 
-    assert DEFAULT_TOP_N is not None and DEFAULT_TOP_N > 0
+    assert DEFAULT_MAX_EN_TERMS and DEFAULT_MAX_EN_TERMS > 0
+    assert DEFAULT_TOP_K_PER_EN and DEFAULT_TOP_K_PER_EN > 0
+
+
+# ---------- markup and punctuation normalization ----------
+
+
+def test_en_markup_is_not_tokenized_as_a_word():
+    from term_candidate_extractor import _extract_en_ngrams
+
+    assert "strong" not in _extract_en_ngrams("<strong>virus</strong> cards", 1)
+
+
+def test_en_game_symbols_survive_markup_stripping():
+    from term_candidate_extractor import _extract_en_ngrams
+
+    assert "[click]" in _extract_en_ngrams("lose [click].", 1)
+
+
+def test_ko_edge_punctuation_is_shed():
+    from term_candidate_extractor import _normalize_ko_token
+
+    assert _normalize_ko_token("있다.") == "있다"
+    assert _normalize_ko_token("때,") == "때"
+
+
+def test_ko_game_symbols_are_preserved():
+    """Stripping brackets would destroy the symbol and collide with English."""
+    from term_candidate_extractor import _normalize_ko_token
+
+    assert _normalize_ko_token("[credit]") == "[credit]"
+    assert _normalize_ko_token('"[click],') == "[click]"
+
+
+def test_ko_markup_is_stripped():
+    from term_candidate_extractor import _normalize_ko_token
+
+    assert _normalize_ko_token("<strong>당신의") == "당신의"
+
+
+def test_ko_surface_forms_merge_into_one_term():
+    """'있다.' and '있다' were counted as different terms, splitting cooccurrence."""
+    pairs = [{"en_text": "may", "ko_text": "있다."}, {"en_text": "may", "ko_text": "있다"}]
+    candidates = generate_candidates(pairs, min_cooccur=2, max_en_terms=None,
+                                     top_k_per_en=None)
+    assert [(c.en_term, c.ko_term, c.cooccurrence) for c in candidates] == [
+        ("may", "있다", 2)
+    ]

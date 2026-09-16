@@ -1,0 +1,512 @@
+[
+  {
+    "en_template": "{SYM} End the run.",
+    "ko_template": "{SYM} 런을 종료한다.",
+    "count": 44,
+    "examples": [
+      "archer",
+      "enigma",
+      "hadrians_wall"
+    ]
+  },
+  {
+    "en_template": "{N}{SYM}: +{N} strength.",
+    "ko_template": "{N}{SYM}: 힘을 +{N} 한다.",
+    "count": 30,
+    "examples": [
+      "aurora",
+      "crypsis",
+      "ninja"
+    ]
+  },
+  {
+    "en_template": "{N}{SYM}",
+    "ko_template": "{N}{SYM}",
+    "count": 24,
+    "examples": [
+      "crash_space",
+      "cyberfeeder",
+      "nbn_making_news"
+    ]
+  },
+  {
+    "en_template": "+{N}{SYM}",
+    "ko_template": "+{N}{SYM}",
+    "count": 21,
+    "examples": [
+      "desperado",
+      "grimoire",
+      "rabbit_hole"
+    ]
+  },
+  {
+    "en_template": "Limit {N} region per server.",
+    "ko_template": "지역은 서버당 {N}개로 제한된다.",
+    "count": 17,
+    "examples": [
+      "sansan_city_grid",
+      "amazon_industrial_zone",
+      "chilo_city_grid"
+    ]
+  },
+  {
+    "en_template": "{SYM} Do {N} net damage.",
+    "ko_template": "{SYM} 넷 피해 {N}점을 입힌다.",
+    "count": 16,
+    "examples": [
+      "data_mine",
+      "neural_katana",
+      "wall_of_thorns"
+    ]
+  },
+  {
+    "en_template": "Limit {N} console per player.",
+    "ko_template": "콘솔은 플레이어당 {N}개로 제한된다.",
+    "count": 15,
+    "examples": [
+      "desperado",
+      "grimoire",
+      "the_toolbox"
+    ]
+  },
+  {
+    "en_template": "Limit {N} per deck.",
+    "ko_template": "덱당 {N}장으로 제한된다.",
+    "count": 12,
+    "examples": [
+      "eden_fragment",
+      "hades_fragment",
+      "utopia_shard"
+    ]
+  },
+  {
+    "en_template": "Shuffle R&D.",
+    "ko_template": "연구개발부(R&D)를 섞는다.",
+    "count": 10,
+    "examples": [
+      "aggressive_negotiation",
+      "fast_track",
+      "mutate"
+    ]
+  },
+  {
+    "en_template": "Shuffle your stack.",
+    "ko_template": "당신의 스택을 섞는다.",
+    "count": 10,
+    "examples": [
+      "djinn",
+      "rabbit_hole",
+      "special_order"
+    ]
+  },
+  {
+    "en_template": "Reveal spent credits.",
+    "ko_template": "지불한 크레딧을 공개한다.",
+    "count": 9,
+    "examples": [
+      "snowflake",
+      "bullfrog",
+      "caprice_nisei"
+    ]
+  },
+  {
+    "en_template": "Gain {N}{SYM}.",
+    "ko_template": "{N}{SYM}을 얻는다.",
+    "count": 8,
+    "examples": [
+      "hedge_fund",
+      "sure_gamble",
+      "successful_demonstration"
+    ]
+  },
+  {
+    "en_template": "Run any server.",
+    "ko_template": "런을 수행한다.",
+    "count": 8,
+    "examples": [
+      "inside_job",
+      "dirty_laundry",
+      "exploratory_romp"
+    ]
+  },
+  {
+    "en_template": "Draw {N} cards.",
+    "ko_template": "카드 {N}장을 뽑는다.",
+    "count": 7,
+    "examples": [
+      "anonymous_tip",
+      "diesel",
+      "quality_time"
+    ]
+  },
+  {
+    "en_template": "Interface → {N}{SYM}: Break {N} code gate subroutine.",
+    "ko_template": "{N}{SYM}: 코드 게이트 서브루틴을 깬다.",
+    "count": 7,
+    "examples": [
+      "gordian_blade",
+      "yog_0",
+      "torch"
+    ]
+  },
+  {
+    "en_template": "Interface → {N}{SYM}: Break {N} sentry subroutine.",
+    "ko_template": "{N}{SYM}: 파수 서브루틴을 깬다.",
+    "count": 7,
+    "examples": [
+      "mimic",
+      "ninja",
+      "pipeline"
+    ]
+  },
+  {
+    "en_template": "This card is not trashed until another current is played or an agenda is scored.",
+    "ko_template": "이 카드는 다른 동향이 플레이되거나, 기업이 아젠다를 득점하기 전에는 폐기되지 않는다.",
+    "count": 7,
+    "examples": [
+      "net_celebrity",
+      "scrubbed",
+      "unscheduled_maintenance"
+    ]
+  },
+  {
+    "en_template": "This card is not trashed until another current is played or an agenda is stolen.",
+    "ko_template": "이 카드는 다른 동향이 플레이되거나, 러너가 아젠다를 훔치기 전에는 폐기되지 않는다.",
+    "count": 7,
+    "examples": [
+      "paywall_implementation",
+      "targeted_marketing",
+      "predictive_algorithm"
+    ]
+  },
+  {
+    "en_template": "As an additional cost to play this operation, spend {SYM}.",
+    "ko_template": "이 운영을 플레이하기 위한 추가 비용으로 {SYM}을 쓴다.",
+    "count": 6,
+    "examples": [
+      "shipment_from_sansan",
+      "corporate_shuffle",
+      "reclamation_order"
+    ]
+  },
+  {
+    "en_template": "Interface → {N}{SYM}: Break {N} barrier subroutine.",
+    "ko_template": "{N}{SYM}: 방벽 서브루틴을 깬다.",
+    "count": 6,
+    "examples": [
+      "aurora",
+      "corroder",
+      "snowball"
+    ]
+  },
+  {
+    "en_template": "Make a run.",
+    "ko_template": "런을 수행한다.",
+    "count": 6,
+    "examples": [
+      "recon",
+      "bribery",
+      "prey"
+    ]
+  },
+  {
+    "en_template": "Play only as your first {SYM}.",
+    "ko_template": "당신의 첫 번째 {SYM}으로만 플레이할 수 있다.",
+    "count": 6,
+    "examples": [
+      "paper_tripping",
+      "social_engineering",
+      "three_steps_ahead"
+    ]
+  },
+  {
+    "en_template": "Play only if the Runner is tagged.",
+    "ko_template": "러너가 태그됐을 때만 플레이할 수 있다.",
+    "count": 6,
+    "examples": [
+      "closed_accounts",
+      "scorched_earth",
+      "freelancer"
+    ]
+  },
+  {
+    "en_template": "Reveal spent credits.",
+    "ko_template": "쓴 크레딧을 공개한다.",
+    "count": 6,
+    "examples": [
+      "upayoga",
+      "chetana",
+      "dedicated_neural_net"
+    ]
+  },
+  {
+    "en_template": "As an additional cost to play this event, spend {SYM}.",
+    "ko_template": "이 이벤트를 플레이하기 위한 추가 비용으로 {SYM}을 쓴다.",
+    "count": 5,
+    "examples": [
+      "hostage",
+      "lawyer_up",
+      "executive_wiretaps"
+    ]
+  },
+  {
+    "en_template": "Interface → {N}{SYM}: Break {N} subroutine.",
+    "ko_template": "{N}{SYM}: 아이스의 서브루틴을 깬다.",
+    "count": 5,
+    "examples": [
+      "crypsis",
+      "darwin",
+      "alpha"
+    ]
+  },
+  {
+    "en_template": "Run HQ.",
+    "ko_template": "본부(HQ)로 런을 수행한다.",
+    "count": 5,
+    "examples": [
+      "account_siphon",
+      "escher",
+      "legwork"
+    ]
+  },
+  {
+    "en_template": "Spend credits only from stealth cards to use this ability.",
+    "ko_template": "이 능력은 스텔스 카드로부터 가져온 크레딧을 지불할 때만 사용한다.",
+    "count": 5,
+    "examples": [
+      "dagger",
+      "refractor",
+      "switchblade"
+    ]
+  },
+  {
+    "en_template": "This card costs {N} influence if you have {N} or more non-alliance {SYM} cards in your deck.",
+    "ko_template": "당신의 덱에 연합이 아닌 {SYM} 카드가 {N}장 이상이라면 이 카드의 영향력은 {N}이 된다.",
+    "count": 5,
+    "examples": [
+      "heritage_committee",
+      "product_recall",
+      "executive_search_firm"
+    ]
+  },
+  {
+    "en_template": "This operation is not trashed until another current is played or an agenda is stolen.",
+    "ko_template": "이 카드는 다른 동향이 플레이되거나, 러너가 아젠다를 훔치기 전에는 폐기되지 않는다.",
+    "count": 5,
+    "examples": [
+      "cerebral_static",
+      "enhanced_login_protocol",
+      "lag_time"
+    ]
+  },
+  {
+    "en_template": "{N}{SYM}: +{N} strength for the remainder of this run.",
+    "ko_template": "{N}{SYM}: 이번 런 동안 힘을 +{N} 한다.",
+    "count": 5,
+    "examples": [
+      "battering_ram",
+      "gordian_blade",
+      "pipeline"
+    ]
+  },
+  {
+    "en_template": "{N}{SYM}: +{N} strength.",
+    "ko_template": "{N}{SYM}: 힘을 +{N}한다.",
+    "count": 5,
+    "examples": [
+      "corroder",
+      "force_of_nature",
+      "cerberus_cuj_0_h3"
+    ]
+  },
+  {
+    "en_template": "{SYM} Trash {N} installed program.",
+    "ko_template": "{SYM} 프로그램 {N}개를 폐기한다.",
+    "count": 5,
+    "examples": [
+      "archer",
+      "archer",
+      "rototurret"
+    ]
+  },
+  {
+    "en_template": "{SYM}: Gain {N}{SYM}.",
+    "ko_template": "{SYM}: {N}{SYM}을 얻는다.",
+    "count": 5,
+    "examples": [
+      "magnum_opus",
+      "fall_guy",
+      "tri_maf_contact"
+    ]
+  },
+  {
+    "en_template": "Limit {N} console per player.",
+    "ko_template": "콘솔은 플레이어당 {N}장으로 제한된다.",
+    "count": 4,
+    "examples": [
+      "logos",
+      "box_e",
+      "astrolabe"
+    ]
+  },
+  {
+    "en_template": "Your maximum hand size is increased by {N}.",
+    "ko_template": "당신의 최대 핸드 크기를 {N}만큼 증가시킨다.",
+    "count": 4,
+    "examples": [
+      "public_sympathy",
+      "logos",
+      "box_e"
+    ]
+  },
+  {
+    "en_template": "{SYM} Trash {N} program.",
+    "ko_template": "{SYM} 프로그램 {N}개를 폐기한다.",
+    "count": 4,
+    "examples": [
+      "lycan",
+      "nebula",
+      "orion"
+    ]
+  },
+  {
+    "en_template": "As an additional cost to play this event, spend {SYM}.",
+    "ko_template": "이 이벤트를 플레이하기 위한 추가 비용으로, {SYM}을 쓴다.",
+    "count": 3,
+    "examples": [
+      "queens_gambit",
+      "game_day",
+      "drive_by"
+    ]
+  },
+  {
+    "en_template": "As an additional cost to play this operation, spend {SYM}.",
+    "ko_template": "이 운영을 플레이하기 위한 추가 비용으로, {SYM}을 쓴다.",
+    "count": 3,
+    "examples": [
+      "interns",
+      "reuse",
+      "shoot_the_moon"
+    ]
+  },
+  {
+    "en_template": "Do {N} meat damage.",
+    "ko_template": "육체 피해 {N}점을 입힌다.",
+    "count": 3,
+    "examples": [
+      "scorched_earth",
+      "traffic_accident",
+      "boom"
+    ]
+  },
+  {
+    "en_template": "Gain {N}{SYM}.",
+    "ko_template": "{N}{SYM}를 얻는다.",
+    "count": 3,
+    "examples": [
+      "beanstalk_royalties",
+      "easy_mark",
+      "restructure"
+    ]
+  },
+  {
+    "en_template": "Run R&D.",
+    "ko_template": "연구개발부(R&D)로 런을 수행한다.",
+    "count": 3,
+    "examples": [
+      "the_makers_eye",
+      "indexing",
+      "data_breach"
+    ]
+  },
+  {
+    "en_template": "The Runner loses {N}{SYM}.",
+    "ko_template": "러너는 {N}{SYM}을 잃는다.",
+    "count": 3,
+    "examples": [
+      "dna_tracker",
+      "dna_tracker",
+      "dna_tracker"
+    ]
+  },
+  {
+    "en_template": "This event is not trashed until another current is played or an agenda is scored.",
+    "ko_template": "이 카드는 다른 동향이 플레이되거나, 기업이 아젠다를 득점하기 전에는 폐기되지 않는다.",
+    "count": 3,
+    "examples": [
+      "itinerant_protesters",
+      "employee_strike",
+      "system_outage"
+    ]
+  },
+  {
+    "en_template": "Use this ability only during a run.",
+    "ko_template": "이 능력은 런을 수행하는 중에만 사용할 수 있다.",
+    "count": 3,
+    "examples": [
+      "mamba",
+      "security_chip",
+      "emp_device"
+    ]
+  },
+  {
+    "en_template": "Your maximum hand size is increased by {N}.",
+    "ko_template": "당신의 최대 핸드 크기가 {N}만큼 증가한다.",
+    "count": 3,
+    "examples": [
+      "nbn_the_world_is_yours",
+      "borrowed_satellite",
+      "cybernetics_court"
+    ]
+  },
+  {
+    "en_template": "{SYM} The Corp gains {N}{SYM} or draws {N} card.",
+    "ko_template": "{SYM} 기업은 {N}{SYM}을 얻거나 카드 {N}장을 뽑는다.",
+    "count": 3,
+    "examples": [
+      "errand_boy",
+      "errand_boy",
+      "errand_boy"
+    ]
+  },
+  {
+    "en_template": "{SYM} The Runner loses {SYM}, if able.",
+    "ko_template": "{SYM} 러너는 가능하다면 {SYM}을 잃는다.",
+    "count": 3,
+    "examples": [
+      "hourglass",
+      "hourglass",
+      "hourglass"
+    ]
+  },
+  {
+    "en_template": "{SYM} You and the Runner secretly spend {N}{SYM}, {N}{SYM}, or {N}{SYM}.",
+    "ko_template": "{SYM} 당신과 러너는 각자 몰래 {N}{SYM}이나 {N}{SYM} 또는 {N}{SYM}을 지불한다.",
+    "count": 3,
+    "examples": [
+      "snowflake",
+      "mamba",
+      "clairvoyant_monitor"
+    ]
+  },
+  {
+    "en_template": "{SYM} You and the Runner secretly spend {N}{SYM}, {N}{SYM}, or {N}{SYM}.",
+    "ko_template": "{SYM} 당신과 러너는 비밀리에 {N}{SYM}이나 {N}{SYM}, {N}{SYM}을 쓴다.",
+    "count": 3,
+    "examples": [
+      "upayoga",
+      "chetana",
+      "aiki"
+    ]
+  },
+  {
+    "en_template": "{SYM}: Draw {N} cards.",
+    "ko_template": "{SYM}: 카드 {N}장을 뽑는다.",
+    "count": 3,
+    "examples": [
+      "mr_li",
+      "jackson_howard",
+      "sports_hopper"
+    ]
+  }
+]

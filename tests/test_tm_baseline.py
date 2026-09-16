@@ -1,20 +1,36 @@
 """test_tm_baseline.py — Phase-1 closing gate: TM-only baseline regression check.
 
-SERVICE.md §5 gate 3 documents a TM nearest-neighbour baseline median of ~0.359
-(measured against the clean 2012-2016 corpus).  The actual value computed from
-the committed data split (hold_out.json / train.json) is ~0.4375; the discrepancy
-arises because the 0.359 figure in the spec was an early estimate.
+This is the phase-1 exit gate.  It pins the TM-only baseline so later phases
+can prove they improved on it rather than drifted away from it.
 
-This test:
-  1. Builds the HybridTMIndex from data/train.json (880 cards).
-  2. For each hold-out card (100 cards) retrieves the top-1 TM neighbour and uses
-     its KO text as the "predicted" translation.
-  3. Computes 1 - SequenceMatcher.ratio() (whitespace-normalised).
-  4. Asserts the median is in [0.25, 0.55] — a range that captures both the spec
-     estimate (0.359) and the corpus-derived actual (≈0.44) while catching severe
-     TM regressions.
+**On the number.**  SERVICE.md originally documented 0.359.  That figure was
+measured on the legacy ``pack/`` corpus layout with a different card set and a
+difflib nearest-neighbour search.  This project uses the v2 layout, and the
+committed 100/880 split is a different set of cards, so 0.359 is not
+reproducible here and never will be.  The reproducible value on this split is
+**0.385**, established by benchmarking every candidate retriever against the
+same split:
 
-The median printed by this test becomes the regression sentinel for phase 2.
+===========================  ======
+retriever                    median
+===========================  ======
+BM25 alone                   0.4420
+dense alone (MiniLM)         0.4249
+char 3-5gram TF-IDF alone    0.4002
+BM25 + dense                 0.4250
+BM25 + char                  0.4067
+difflib (naive reference)    0.3858
+BM25 + dense + char (ours)   0.3850
+===========================  ======
+
+No retriever reaches 0.359, so the ceiling on this split is ~0.385, not a
+target we missed.
+
+**Why the band is tight.**  An earlier implementation scored 0.4375 and passed
+itself by widening this assertion to [0.25, 0.55].  A gate that accepts the
+regression it was meant to catch is not a gate.  The band below fails that
+0.4375 implementation, which is the specific regression this test exists to
+catch.  It is wide enough only for minor embedding-model version drift.
 """
 from __future__ import annotations
 
@@ -24,6 +40,13 @@ from pathlib import Path
 import pytest
 
 DATA_DIR = Path(__file__).parent.parent / "data"
+
+#: Reproducible TM-only baseline on the committed split (see module docstring).
+BASELINE_MEDIAN = 0.385
+
+#: Absolute tolerance around BASELINE_MEDIAN.  0.025 fails the 0.4375
+#: bag-of-words regression by a clear margin while tolerating model drift.
+BASELINE_TOLERANCE = 0.025
 
 
 @pytest.fixture(scope="module")
@@ -54,16 +77,13 @@ def test_no_overlap_between_splits(split_data):
 
 
 def test_tm_baseline_median(split_data):
-    """Phase-1 closing gate: TM-only baseline median in expected range."""
-    import sys
-    sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
+    """Phase-1 closing gate: TM-only baseline median pinned to 0.385 +/- 0.025."""
     from tm_baseline import compute_tm_baseline
 
     hold_out, train = split_data
     result = compute_tm_baseline(hold_out, train)
-
     median = result["median"]
+
     print(
         f"\nTM-only baseline  n={result['n']}"
         f"  median={median:.4f}"
@@ -71,14 +91,13 @@ def test_tm_baseline_median(split_data):
         f"  min={result['min']:.4f}"
         f"  max={result['max']:.4f}"
     )
-    print(
-        f"SERVICE.md §5 spec estimate: 0.359 | corpus-derived actual: {median:.4f}"
-    )
 
-    # Regression sentinel: median must be in [0.25, 0.55].
-    # Lower bound (0.25) guards against accidental train/hold-out leakage.
-    # Upper bound (0.55) catches severe TM quality regression.
-    assert 0.25 <= median <= 0.55, (
-        f"TM-only baseline median {median:.4f} outside expected range [0.25, 0.55]. "
-        "Check that hold-out and train splits are correct and TM index is functioning."
+    low = BASELINE_MEDIAN - BASELINE_TOLERANCE
+    high = BASELINE_MEDIAN + BASELINE_TOLERANCE
+    assert low <= median <= high, (
+        f"TM-only baseline median {median:.4f} outside [{low:.3f}, {high:.3f}].\n"
+        f"Above {high:.3f} means the TM retriever regressed — the BM25 + "
+        f"bag-of-words implementation this gate replaced scored 0.4375.\n"
+        f"Below {low:.3f} means hold-out cards leaked into the training split, "
+        f"which makes every downstream metric meaningless."
     )

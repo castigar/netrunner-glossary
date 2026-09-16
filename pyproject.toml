@@ -3,6 +3,20 @@ name = "netrunner-translation-agent"
 version = "0.1.0"
 description = "Android: Netrunner EN→KO translation assistant agent"
 requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "rank-bm25>=0.2.2",
+    "scikit-learn>=1.4",
+    "sentence-transformers>=3.0",
+    "pydantic>=2.6",
+    "langchain-core>=0.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

@@ -2,11 +2,18 @@
 
 Uses card_subtypes.json 88 entries as the direct scoring gold set.
 
+Scored path (SERVICE.md §6, 결정 ①): the 88-entry gold set covers **subtypes only**,
+so it scores the 부제 path (subtype_extractor).  The rule path is scored against a
+separate hand-labelled gold set and is not measured here.
+
 Matching rule:
-  EN side — subtype id is normalized to a candidate en_term by replacing '_' with ' '.
-             e.g. "code_gate" → "code gate", "barrier" → "barrier"
-  A subtype is considered *found* when its normalized EN form appears as the en_term
-  of any extracted TermCandidate.
+  Both sides are normalized the same way: '_' and '-' become ' ', then lowercase.
+  e.g. gold id "code_gate" → "code gate"; printed keyword "Consumer-Grade" →
+  "consumer grade", which is the same term as gold id "consumer_grade".
+  Normalizing only the gold side scored the 부제 path's printed hyphen forms
+  ("G-Mod", "Consumer-Grade") as both a miss and a false positive.
+  A subtype is considered *found* when its normalized EN form matches the
+  normalized en_term of any extracted candidate.
 
 Metrics:
   TP  = gold EN terms that appear in the extracted candidate EN terms.
@@ -16,18 +23,22 @@ Metrics:
   Recall    = TP / (TP + FN) = TP / |gold_en_terms|
   F1        = harmonic mean of precision and recall.
 
-Note: precision will naturally be low because generate_candidates() surfaces
-many high-frequency EN n-grams that are not card subtypes. Recall is the
-primary signal — it shows how many of the 88 official subtypes the statistical
-extractor recovers from the corpus.
+Note: on the 부제 path precision is meaningful, because the candidates are whole
+keyword-field elements. Pointing this at the rule path instead would depress
+precision by construction — its n-gram candidates are mostly not subtypes.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 import json
 
-from term_candidate_extractor import TermCandidate
+
+class HasEnTerm(Protocol):
+    """Anything carrying an EN term: TermCandidate (rule path) or SubtypePair."""
+
+    en_term: str
 
 
 @dataclass
@@ -58,20 +69,24 @@ class EvaluationResult:
 def _normalize_subtype_id(subtype_id: str) -> str:
     """Convert a subtype id slug to the form expected in card text.
 
-    Replaces underscores with spaces; keeps everything lowercase.
-    e.g. "code_gate" → "code gate", "ai" → "ai"
+    Replaces underscores and hyphens with spaces; keeps everything lowercase.
+    e.g. "code_gate" → "code gate", "ai" → "ai", "G-Mod" → "g mod"
+
+    The same function normalizes extracted terms, so a printed hyphen form
+    matches its underscored gold id.
     """
-    return subtype_id.replace("_", " ").lower()
+    return subtype_id.replace("_", " ").replace("-", " ").lower()
 
 
 def evaluate_extraction(
-    candidates: list[TermCandidate],
+    candidates: list[HasEnTerm],
     gold_subtypes: list[dict],
 ) -> EvaluationResult:
     """Compute precision and recall against the card_subtypes.json gold set.
 
     Args:
-        candidates:    Output of generate_candidates() — list of TermCandidate.
+        candidates:    Extraction output — anything with an ``en_term``, i.e.
+                       SubtypePair (부제 경로) or TermCandidate (룰 경로).
         gold_subtypes: List of {"id": <str>, "name": <str>} dicts from
                        card_subtypes.json (88 entries expected).
 
@@ -81,7 +96,9 @@ def evaluate_extraction(
     gold_en_terms: set[str] = {
         _normalize_subtype_id(entry["id"]) for entry in gold_subtypes
     }
-    extracted_en_terms: set[str] = {c.en_term for c in candidates}
+    extracted_en_terms: set[str] = {
+        _normalize_subtype_id(c.en_term) for c in candidates
+    }
 
     found = gold_en_terms & extracted_en_terms
     missed = gold_en_terms - extracted_en_terms

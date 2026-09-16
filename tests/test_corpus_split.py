@@ -118,3 +118,31 @@ def test_build_split_deterministic():
     h2, t2 = build_split(Path(CORPUS_ROOT))
     assert [c["id"] for c in h1] == [c["id"] for c in h2]
     assert [c["id"] for c in t1] == [c["id"] for c in t2]
+
+
+# ---------- legacy keywords (부제 추출 경로 입력) ----------
+
+
+@needs_corpus
+def test_keywords_are_loaded_for_most_cards():
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    assert all("en_keywords" in c and "ko_keywords" in c for c in cards)
+    with_kw = [c for c in cards if c["en_keywords"]]
+    assert len(with_kw) == 801
+
+
+@needs_corpus
+def test_keywords_are_split_lists_not_raw_strings():
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    wyldside = next(c for c in cards if c["id"] == "wyldside")
+    assert wyldside["en_keywords"] == ["Location", "Seedy"]
+    assert wyldside["ko_keywords"] == ["장소", "지저분함"]
+
+
+@needs_corpus
+def test_adding_keywords_did_not_change_the_card_set_or_the_split():
+    """The TM baseline reads only en_text/ko_text, so it must be unaffected."""
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    assert len(cards) == 980
+    hold_out, train = split_corpus(cards, seed=42, holdout_size=100)
+    assert (len(hold_out), len(train)) == (100, 880)

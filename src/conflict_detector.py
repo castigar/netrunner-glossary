@@ -23,12 +23,14 @@ class ConflictEntry:
     en_term: str
     ko_variants: list[str]
     source_card_ids: dict[str, list[str]] = field(default_factory=dict)
+    source: str = ""
 
     def to_dict(self) -> dict:
         return {
             "en_term": self.en_term,
             "ko_variants": self.ko_variants,
             "source_card_ids": self.source_card_ids,
+            "source": self.source,
         }
 
 
@@ -41,8 +43,13 @@ class ConflictDetectionResult:
 
     def write_conflicts_json(self, path: str | Path) -> None:
         """Write conflicts to the given JSON file path."""
-        output = [e.to_dict() for e in self.conflicts]
-        Path(path).write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_conflicts_json(self.conflicts, path)
+
+
+def write_conflicts_json(entries: list[ConflictEntry], path: str | Path) -> None:
+    """Write *entries* — possibly merged from several extraction paths — as JSON."""
+    output = [e.to_dict() for e in entries]
+    Path(path).write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def detect_conflicts(
@@ -50,6 +57,7 @@ def detect_conflicts(
     en_key: str = "en_term",
     ko_key: str = "ko_term",
     card_id_key: str | None = "card_id",
+    source: str = "",
 ) -> ConflictDetectionResult:
     """Detect EN terms that have multiple distinct KO translations.
 
@@ -65,6 +73,8 @@ def detect_conflicts(
         card_id_key: Optional field name for source card id. When present, the
                      source card ids per KO variant are collected for the
                      conflict report. Pass None to skip card id tracking.
+        source:      Label recorded on each ConflictEntry so a merged
+                     conflicts.json says which extraction path raised it.
 
     Returns:
         ConflictDetectionResult with:
@@ -103,6 +113,7 @@ def detect_conflicts(
                     en_term=en_term,
                     ko_variants=sorted_variants,
                     source_card_ids=source_card_ids,
+                    source=source,
                 )
             )
 

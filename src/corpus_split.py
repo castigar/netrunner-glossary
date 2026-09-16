@@ -6,6 +6,13 @@ Clean corpus definition (SERVICE.md §5):
   - KO translation file exists AND its `text` field is non-empty AND contains at least one Hangul character
   - Expected size: ~980 cards
 
+Subtype keywords (SERVICE.md §6, 부제 추출 경로):
+  The v2 layout has no per-card KO subtype line — v2 cards carry subtype *ids*
+  and their KO names exist only in the single card_subtypes.json table, which is
+  the gold set.  The printed ' - ' joined keyword line for both languages lives
+  in the legacy pack/ layout, so load_clean_corpus() joins it in via
+  v2/printings (legacy `code` == printing `id`).
+
 Split (seed 42):
   - Shuffle the sorted card IDs with random.Random(42)
   - hold_out: first 100
@@ -19,6 +26,9 @@ import os
 import random
 import unicodedata
 from pathlib import Path
+
+
+KEYWORD_SEPARATOR = " - "
 
 
 def _has_hangul(text: str) -> bool:
@@ -64,6 +74,62 @@ def _build_card_earliest_dates(root: Path) -> dict[str, str]:
     return card_earliest
 
 
+def _build_code_to_card_id(root: Path) -> dict[str, str]:
+    """Return {legacy pack code: v2 card_id}. The legacy code is the printing id."""
+    code_to_card: dict[str, str] = {}
+    for fname in (root / "v2" / "printings").iterdir():
+        if fname.suffix != ".json":
+            continue
+        with fname.open(encoding="utf-8") as f:
+            for printing in json.load(f):
+                pid = printing.get("id", "")
+                cid = printing.get("card_id", "")
+                if pid and cid:
+                    code_to_card[pid] = cid
+    return code_to_card
+
+
+def _read_pack_keywords(pack_dir: Path) -> dict[str, str]:
+    """Return {code: raw keywords string} for every card in a legacy pack dir."""
+    keywords: dict[str, str] = {}
+    if not pack_dir.is_dir():
+        return keywords
+    for fname in pack_dir.iterdir():
+        if fname.suffix != ".json":
+            continue
+        with fname.open(encoding="utf-8") as f:
+            cards = json.load(f)
+        for card in cards:
+            code = card.get("code", "")
+            kw = card.get("keywords") or ""
+            if code and kw:
+                keywords[code] = kw
+    return keywords
+
+
+def _load_legacy_keywords(root: Path) -> dict[str, dict[str, list[str]]]:
+    """Return {card_id: {"en": [...], "ko": [...]}} from the legacy pack layout.
+
+    Only cards carrying the keyword line in *both* languages are returned; the
+    elements are split on KEYWORD_SEPARATOR and left otherwise untouched, so the
+    positional EN<->KO correspondence is preserved for the caller to align.
+    """
+    en_raw = _read_pack_keywords(root / "pack")
+    ko_raw = _read_pack_keywords(root / "translations" / "ko" / "pack")
+    code_to_card = _build_code_to_card_id(root)
+
+    out: dict[str, dict[str, list[str]]] = {}
+    for code in en_raw.keys() & ko_raw.keys():
+        card_id = code_to_card.get(code)
+        if not card_id:
+            continue
+        out[card_id] = {
+            "en": [k.strip() for k in en_raw[code].split(KEYWORD_SEPARATOR)],
+            "ko": [k.strip() for k in ko_raw[code].split(KEYWORD_SEPARATOR)],
+        }
+    return out
+
+
 def load_clean_corpus(root: Path | None = None) -> list[dict]:
     """Return sorted list of EN/KO card pairs matching the clean corpus criteria.
 
@@ -74,6 +140,8 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
           "en_text":  str,                # EN rules text (text field)
           "ko_text":  str,                # KO rules text (text field)
           "date":     str,                # YYYY-MM-DD earliest release
+          "en_keywords": list[str],       # EN subtype line, [] when absent
+          "ko_keywords": list[str],       # KO subtype line, [] when absent
         }
 
     The list is sorted by (date, id) for reproducibility before any shuffle.
@@ -85,6 +153,7 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
     ko_dir = root / "v2" / "translations" / "ko" / "cards"
 
     card_earliest = _build_card_earliest_dates(root)
+    legacy_keywords = _load_legacy_keywords(root)
 
     # Load KO translations into a lookup map
     ko_lookup: dict[str, dict] = {}
@@ -125,7 +194,17 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
         if not _has_hangul(ko_text):
             continue
 
-        clean.append({"id": cid, "en_text": en_text, "ko_text": ko_text, "date": date})
+        kw = legacy_keywords.get(cid, {})
+        clean.append(
+            {
+                "id": cid,
+                "en_text": en_text,
+                "ko_text": ko_text,
+                "date": date,
+                "en_keywords": kw.get("en", []),
+                "ko_keywords": kw.get("ko", []),
+            }
+        )
 
     clean.sort(key=lambda c: (c["date"], c["id"]))
     return clean

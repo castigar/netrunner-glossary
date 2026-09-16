@@ -11,7 +11,14 @@ Algorithm:
   3. Compute Dice coefficient = 2 * cooccur(A,B) / (freq(A) + freq(B)).
   4. Compute PMI = log2(P(A,B) / (P(A) * P(B))).
   5. Keep only pairs with cooccurrence >= min_cooccur (default 5).
-  6. Return sorted by Dice score descending.
+  6. Sort by Dice score descending and keep the top *top_n*.
+
+룰 경로에는 Dice 상위 N개 상한을 둔다 (SERVICE.md §6, 결정 ②).  상한 없이는
+min_cooccur만 남아 76,309개가 나오고, 그 규모로는 LLM 판정이 비용 이전에 무의미하다.
+상한은 판정 예산이지 품질 게이트가 아니다 — 잡음 후보를 실제로 걱러내는 것은
+term_judge의 가부 판정이다.
+
+부제 추출은 이 모듈이 아니라 subtype_extractor가 담당한다.
 """
 from __future__ import annotations
 
@@ -48,6 +55,9 @@ def _extract_ko_eojeol_ngrams(text: str, max_n: int = 3) -> list[str]:
     return ngrams
 
 
+DEFAULT_TOP_N = 5000
+
+
 @dataclass(frozen=True)
 class TermCandidate:
     """A candidate (EN n-gram, KO eojeol n-gram) term pair with statistics."""
@@ -65,6 +75,7 @@ def generate_candidates(
     ko_field: str = "ko_text",
     max_n: int = 3,
     min_cooccur: int = 5,
+    top_n: int | None = DEFAULT_TOP_N,
 ) -> list[TermCandidate]:
     """Generate term candidates using only corpus statistics — 0 LLM calls.
 
@@ -74,10 +85,12 @@ def generate_candidates(
         ko_field:     Key for the KO translation text in each pair dict.
         max_n:        Maximum n-gram length (default 3).
         min_cooccur:  Minimum cooccurrence count threshold (default 5).
+        top_n:        Keep only the *top_n* highest-Dice pairs. None removes the
+                      cap, which on the full corpus yields ~76k candidates.
 
     Returns:
-        List of TermCandidate, sorted by Dice coefficient descending.
-        Only pairs whose cooccurrence >= *min_cooccur* are returned.
+        List of TermCandidate, sorted by Dice coefficient descending, truncated
+        to *top_n*.  Only pairs whose cooccurrence >= *min_cooccur* are returned.
 
     Note:
         This function makes **zero** LLM API calls. All computation is
@@ -133,5 +146,9 @@ def generate_candidates(
             )
         )
 
-    candidates.sort(key=lambda c: c.dice, reverse=True)
+    # Ties on Dice are common (many pairs sit at 1.0), so break them
+    # deterministically instead of letting the cap depend on dict ordering.
+    candidates.sort(key=lambda c: (-c.dice, -c.cooccurrence, c.en_term, c.ko_term))
+    if top_n is not None:
+        candidates = candidates[:top_n]
     return candidates

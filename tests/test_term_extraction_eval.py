@@ -350,3 +350,24 @@ def test_real_corpus_evaluation_fields_are_consistent():
     assert 0.0 <= result.precision <= 1.0
     assert 0.0 <= result.recall <= 1.0
     assert 0.0 <= result.f1 <= 1.0
+
+
+# ---------- hyphen normalization (부제 경로 인쇄 표기) ----------
+
+
+def test_normalize_subtype_id_hyphen_to_space():
+    assert _normalize_subtype_id("g-mod") == "g mod"
+
+
+def test_normalize_subtype_id_mixed_separators():
+    assert _normalize_subtype_id("Consumer-Grade") == "consumer grade"
+
+
+def test_printed_hyphen_form_matches_underscored_gold_id():
+    """'Consumer-Grade' on a card is gold id 'consumer_grade', not a false positive."""
+    gold = _make_gold(["consumer_grade", "g_mod"])
+    candidates = [_make_candidate("consumer-grade"), _make_candidate("g-mod")]
+    result = evaluate_extraction(candidates, gold)
+    assert result.tp == 2
+    assert result.fp == 0
+    assert result.fn == 0

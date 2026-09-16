@@ -356,3 +356,55 @@ def test_build_judge_chain_uses_pydantic_structured_output():
     assert schema_arg is TermJudgment, (
         "with_structured_output must receive the TermJudgment Pydantic model"
     )
+
+
+# ---------- Dice top-N cap (SERVICE.md §6, 결정 ②) ----------
+
+
+def _cap_fixture(n_pairs=60):
+    """Enough distinct vocabulary that min_cooccur alone leaves many candidates."""
+    return [
+        {"en_text": f"alpha beta word{i % 7}", "ko_text": f"알파 베타 단어{i % 7}"}
+        for i in range(n_pairs)
+    ]
+
+
+def test_top_n_truncates_to_the_cap():
+    pairs = _cap_fixture()
+    uncapped = generate_candidates(pairs, min_cooccur=1, top_n=None)
+    assert len(uncapped) > 5
+    assert len(generate_candidates(pairs, min_cooccur=1, top_n=5)) == 5
+
+
+def test_top_n_keeps_the_highest_dice():
+    pairs = _cap_fixture()
+    uncapped = generate_candidates(pairs, min_cooccur=1, top_n=None)
+    capped = generate_candidates(pairs, min_cooccur=1, top_n=5)
+    assert capped == uncapped[:5]
+    assert min(c.dice for c in capped) >= max(c.dice for c in uncapped[5:])
+
+
+def test_top_n_none_removes_the_cap():
+    pairs = _cap_fixture()
+    assert len(generate_candidates(pairs, min_cooccur=1, top_n=None)) > 5
+
+
+def test_top_n_larger_than_population_is_harmless():
+    pairs = _cap_fixture()
+    uncapped = generate_candidates(pairs, min_cooccur=1, top_n=None)
+    assert generate_candidates(pairs, min_cooccur=1, top_n=10**6) == uncapped
+
+
+def test_cap_is_deterministic_across_runs():
+    """Dice ties are common, so the cut must not depend on dict ordering."""
+    pairs = _cap_fixture()
+    first = generate_candidates(pairs, min_cooccur=1, top_n=5)
+    for _ in range(3):
+        assert generate_candidates(pairs, min_cooccur=1, top_n=5) == first
+
+
+def test_default_applies_a_cap():
+    """The default must not be 'unlimited' — that is the defect being fixed."""
+    from term_candidate_extractor import DEFAULT_TOP_N
+
+    assert DEFAULT_TOP_N is not None and DEFAULT_TOP_N > 0

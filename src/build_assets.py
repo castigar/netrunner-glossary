@@ -16,7 +16,15 @@ Pipeline order is fixed by SERVICE.md §6 and the order matters:
 3. Load the official glossary (subtypes, card types, factions, cycles, sets)
    and exclude those ids from statistical extraction — they are already
    authoritative, so re-deriving them would only add noise.
-4. Generate term candidates from corpus statistics alone.  Zero LLM calls.
+4. Extract terms on **two separate paths** (SERVICE.md §6, 결정 ①):
+   - 부제 경로: the ``keywords`` field, positionally aligned EN<->KO.  Candidates
+     are whole field elements, so the 88-entry gold set scores it directly.
+   - 룰 경로: the ``text`` field, n-gram statistics capped at the top *top_n* by
+     Dice.  Uncapped this yields ~76k candidates, at which scale LLM
+     adjudication is meaningless before it is expensive.
+   Running both through one path was the original defect: noise n-grams
+   collided with each other and buried the 68 real subtype terms under 1,822
+   spurious conflicts.
 5. Adjudicate candidates with an LLM (yes/no only).  Optional: see below.
 6. Detect EN terms with multiple KO translations and hold them back.
 7. Extract sentence templates.
@@ -39,11 +47,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from conflict_detector import detect_conflicts
+from conflict_detector import detect_conflicts, write_conflicts_json
 from corpus_split import load_clean_corpus
 from load_official_glossary import load_official_glossary
 from pattern_extractor import extract_patterns, write_patterns_json
-from term_candidate_extractor import generate_candidates
+from subtype_extractor import extract_subtype_pairs, to_term_pairs
+from term_candidate_extractor import DEFAULT_TOP_N, generate_candidates
+from term_extraction_eval import evaluate_extraction, load_gold_subtypes
 
 DEFAULT_MIN_COOCCUR = 5
 DEFAULT_MIN_PATTERN_COUNT = 3
@@ -72,6 +82,7 @@ def build_assets(
     llm: Any | None = None,
     min_cooccur: int = DEFAULT_MIN_COOCCUR,
     min_pattern_count: int = DEFAULT_MIN_PATTERN_COUNT,
+    top_n: int | None = DEFAULT_TOP_N,
 ) -> dict:
     """Run the phase-1 asset build and write glossary/patterns/conflicts JSON.
 
@@ -81,8 +92,9 @@ def build_assets(
         llm:               optional LangChain chat model for step 5.  When None,
                            candidates are written unadjudicated and the glossary
                            is flagged ``llm_judged: false``.
-        min_cooccur:       minimum cooccurrence for a term candidate.
+        min_cooccur:       minimum cooccurrence for a rule-path term candidate.
         min_pattern_count: minimum occurrences for a sentence template.
+        top_n:             Dice cap on the rule path.  None removes the cap.
 
     Returns:
         A summary dict with the counts at each stage and the written paths.
@@ -97,14 +109,26 @@ def build_assets(
 
     # 3. Official glossary — authoritative, excluded from extraction.
     official = load_official_glossary(_ko_translations_dir(corpus_root))
+    # The 88-entry gold set is the KO subtype table: v2/card_subtypes.json lists
+    # 106 ids, but 18 of them have no KO name and so cannot be scored.
+    gold_subtypes = load_gold_subtypes(
+        _ko_translations_dir(corpus_root) / "card_subtypes.json"
+    )
 
-    # 4. Statistical candidates, zero LLM calls.
-    candidates = generate_candidates(corpus, min_cooccur=min_cooccur)
+    # 4a. 부제 경로 — keywords field, positionally aligned.  Zero LLM calls.
+    subtype_result = extract_subtype_pairs(corpus)
+    subtype_conflicts = detect_conflicts(
+        to_term_pairs(subtype_result.pairs), source="subtype"
+    )
+    subtype_eval = evaluate_extraction(subtype_result.pairs, gold_subtypes)
+
+    # 4b. 룰 경로 — text field n-grams, capped at top_n by Dice.  Zero LLM calls.
+    candidates = generate_candidates(corpus, min_cooccur=min_cooccur, top_n=top_n)
     candidates = [
         c for c in candidates if c.en_term.lower() not in official.excluded_ids
     ]
 
-    # 5. LLM adjudication, only when a model was supplied.
+    # 5. LLM adjudication of the rule path, only when a model was supplied.
     llm_judged = False
     if llm is not None:
         from term_judge import judge_candidates
@@ -115,7 +139,9 @@ def build_assets(
         llm_judged = True
 
     # 6. Conflicts are held back from the glossary until a human resolves them.
-    conflict_result = detect_conflicts([_candidate_to_term_pair(c) for c in candidates])
+    conflict_result = detect_conflicts(
+        [_candidate_to_term_pair(c) for c in candidates], source="rule"
+    )
 
     # 7. Sentence templates.
     patterns = extract_patterns(corpus, min_count=min_pattern_count)
@@ -130,10 +156,23 @@ def build_assets(
         "corpus_root": str(corpus_root),
         "llm_judged": llm_judged,
         "official": official.all_terms(),
+        "subtype_extracted": subtype_conflicts.clean,
         "extracted": conflict_result.clean,
+        "subtype_evaluation": {
+            "precision": subtype_eval.precision,
+            "recall": subtype_eval.recall,
+            "f1": subtype_eval.f1,
+            "tp": subtype_eval.tp,
+            "fp": subtype_eval.fp,
+            "fn": subtype_eval.fn,
+            "gold_size": subtype_eval.gold_size,
+            "extracted_size": subtype_eval.extracted_size,
+        },
         "counts": {
             "official": len(official),
+            "subtype_extracted": len(subtype_conflicts.clean),
             "extracted": len(conflict_result.clean),
+            "subtype_conflicts_held_back": len(subtype_conflicts.conflicts),
             "conflicts_held_back": len(conflict_result.conflicts),
         },
     }
@@ -141,11 +180,19 @@ def build_assets(
         json.dumps(glossary_payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     write_patterns_json(patterns, patterns_path)
-    conflict_result.write_conflicts_json(conflicts_path)
+    write_conflicts_json(
+        subtype_conflicts.conflicts + conflict_result.conflicts, conflicts_path
+    )
 
     return {
         "corpus_cards": len(corpus),
         "official_terms": len(official),
+        "subtype_cards": subtype_result.cards_with_keywords,
+        "subtype_cards_skipped": subtype_result.cards_skipped_length_mismatch,
+        "subtype_terms": len(subtype_conflicts.clean),
+        "subtype_conflicts": len(subtype_conflicts.conflicts),
+        "subtype_precision": subtype_eval.precision,
+        "subtype_recall": subtype_eval.recall,
         "candidates": len(candidates),
         "glossary_terms": len(conflict_result.clean),
         "conflicts": len(conflict_result.conflicts),
@@ -173,6 +220,12 @@ def main() -> None:
     parser.add_argument(
         "--min-pattern-count", type=int, default=DEFAULT_MIN_PATTERN_COUNT
     )
+    parser.add_argument(
+        "--top-n",
+        type=int,
+        default=DEFAULT_TOP_N,
+        help="rule-path Dice cap; 0 removes the cap (~76k candidates)",
+    )
     args = parser.parse_args()
 
     if not args.corpus_root:
@@ -183,6 +236,7 @@ def main() -> None:
         args.out_dir,
         min_cooccur=args.min_cooccur,
         min_pattern_count=args.min_pattern_count,
+        top_n=args.top_n or None,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if not summary["llm_judged"]:

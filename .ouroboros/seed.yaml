@@ -41,8 +41,10 @@ constraints:
 - '코퍼스 로컬 경로는 C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json 이다. 사용자 이력
   repo 스냅샷은 C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json-old 에 있으나 최종본
   스냅샷이므로 학습·평가에 사용하지 않는다. 경로는 설정값으로 분리하고 코드에 하드코딩하지 않는다.'
-- '검수 repo는 castigar/netrunner-glossary 이며 public이고 Issues가 활성화되어 있다. 기본 브랜치는 main이고
-  현재 커밋이 없는 빈 저장소다. 인증은 GITHUB_TOKEN 환경변수에서 읽는다(fine-grained PAT, admin/push 권한 확인됨).
+- '검수 repo는 castigar/netrunner-glossary 이며 public이고 Issues가 활성화되어 있다. 기본 브랜치는 main이며,
+  이 프로젝트의 코드 저장소를 겸한다 — mini_pjt 작업 트리가 이 repo의 origin/main으로 push되어 있으므로
+  구현 코드, conflicts.json/new_term_candidates.json 산출물, GitHub Pages 검수 뷰가 모두 같은 저장소에 있다.
+  인증은 GITHUB_TOKEN 환경변수에서 읽는다(fine-grained PAT, admin/push 권한 확인됨).
   토큰 값을 코드·로그·커밋에 절대 기록하지 않으며, 환경변수가 없으면 즉시 실패하고 드라이런으로 조용히 넘어가지 않는다.'
 - '검수 repo에는 term-conflict 와 new-term-candidate 라벨이 아직 없으므로 Issue 동기화 전에 멱등하게 생성한다.
   기존 라벨(bug, enhancement 등 GitHub 기본값)은 건드리지 않는다.'

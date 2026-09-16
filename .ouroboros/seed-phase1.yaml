@@ -1,0 +1,98 @@
+goal: '[페이즈 1/3 · 자산 구축] Android: Netrunner EN→KO 번역 보조 에이전트의 1단계 오프라인 배치만 구현한다. 미번역 레코드 필터링 → 공식 용어집
+  로드 → 통계 기반 용어 후보 생성(LLM 0회) → LLM 가부 판정 → 용어 충돌 분리 → glossary.json/patterns.json 생성 → 하이브리드 TM 인덱싱까지가
+  범위다. 마지막으로 TM-only 베이스라인을 재현해 회귀 감시선을 확보한다. 2단계 번역 검토 큐와 3단계 확정 절차는 이 페이즈의 범위가 아니며 구현하지 않는다. 단일 진실 원천은
+  mini_pjt/SERVICE.md다.'
+task_type: code
+brownfield_context:
+  project_type: greenfield
+  context_references: []
+  existing_patterns: []
+  existing_dependencies: []
+constraints:
+- 구현 기간 2일, 이후 장기 유지보수 전제
+- '원본 코퍼스는 Null Signal Games의 공개 repo https://github.com/Null-Signal-Games/netrunner-cards-json 이며 대상
+  게임은 Android: Netrunner다. 팀이 소유하지 않은 공식 공개 저장소이므로 도구는 이 repo에 쓰기를 하지 않는다.'
+- 검수 경로는 원본 repo가 아니라 신규 팀 소유 repo다. 그 repo에만 쓰기를 한다.
+- '코퍼스 레이아웃은 v2를 사용한다. v2는 슬러그 id(예: 15_minutes), 카드당 1파일(v2/cards/*.json), 번역은 v2/translations/ko/cards/*.json
+  구조이며 KO 번역 1195장이 있다. legacy pack/ 레이아웃(code 숫자 문자열, 팩당 1파일 배열)은 사용하지 않는다.'
+- 룰 텍스트는 text 필드, 플레이버는 flavor 필드로 이미 분리되어 있고 기호 제거본 stripped_text가 제공되므로 기호 정규화 로직을 새로 작성하지 않는다.
+- 학습에 사용 가능한 깨끗한 코퍼스는 2012-2016 발매분 약 980장이다. EN 전체 2460장 중 KO 번역은 1257장(51%)이고, 2017년 이후 번역은 중단됐으며 2017년
+  부제는 100% 영문 잔존, 한글이 전혀 없는 껍데기 레코드가 124장 있다.
+- 대상 콘텐츠는 카드 룰 텍스트와 플레이버 텍스트만이다. 룰북과 UI는 범위에서 제외한다.
+- 이미 공개된 카드만 취급하므로 외부 LLM 전송 제약이 없다.
+- Supervisor 패턴과 Plan-Execute는 채택하지 않는다. 룰/플레이버 분기는 라우팅으로 처리하며 에이전트 분할이 아니다.
+- 평가 정답셋은 별도 제작하지 않고 기존 번역물 hold-out을 사용한다.
+- 충돌 용어는 사람이 확정하기 전까지 용어집에 포함하지 않는다.
+- 승인만으로 용어집이 자동 갱신되지 않는다.
+- 편집거리 기준선으로 무보조 사람 초벌을 사용할 수 없다. castigar/netrunner-cards-json-old 실측 결과 그 repo의 KR 번역 956장은 전부 현재 ko의
+  부분집합이고 내용이 98.9-100% 동일한 최종본 스냅샷이며(text 상이 8/728건은 오타·띄어쓰기 교정 수준), translations/kr 커밋 9건 중 8건이 upstream
+  메인테이너의 2016년 일괄 포맷팅이고 사용자 커밋은 2026-09-11 단 1건이라 초벌에서 최종으로 가는 진행 이력이 존재하지 않는다.
+- 공식 용어집이 부분적으로 이미 존재한다. 부제·카드타입·팩션·사이클·세트는 추출 대상이 아니므로 로드만 하며, 추출이 필요한 것은 룰 텍스트 내 용어(install, trash,
+  rez 등)뿐이다.
+- '재사용할 기존 코드: day7_practice/final_scenario.py를 그래프 뼈대로, local_tracer.py를 트레이스 콜백으로, llm_judge.py와 run_eval.py를
+  평가 골격으로, mcp_server.py를 MCP 서버 골격으로, guards_input.py를 가드레일 골격으로 쓴다. day5_practice의 로깅 미들웨어에서 usage_metadata는
+  hasattr 체크 후 접근한다.'
+- '구현 이후로 미루는 것: 리랭킹, 형태소 분석기 도입, 수정 피드백의 용어집 자동 승격, 용어 개정 이력 추적, 룰북·UI 텍스트 지원, 승인 결과의 repo 자동 반영, 승인
+  시 신규 용어 자동 등재.'
+- '착수 전 결정이 필요한 잔여 항목: 2021-2022 번역분 142장의 코퍼스 편입 여부, 편집거리 추적 주기, 가드레일 통과율의 하드 게이트 승격 여부.'
+- 코퍼스 로컬 경로는 C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json 이다. 사용자 이력 repo 스냅샷은 C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json-old
+  에 있으나 최종본 스냅샷이므로 학습·평가에 사용하지 않는다. 경로는 설정값으로 분리하고 코드에 하드코딩하지 않는다.
+- 검수 repo는 castigar/netrunner-glossary 이며 public이고 Issues가 활성화되어 있다. 기본 브랜치는 main이며, 이 프로젝트의 코드 저장소를 겸한다
+  — mini_pjt 작업 트리가 이 repo의 origin/main으로 push되어 있으므로 구현 코드, conflicts.json/new_term_candidates.json 산출물,
+  GitHub Pages 검수 뷰가 모두 같은 저장소에 있다. 인증은 GITHUB_TOKEN 환경변수에서 읽는다(fine-grained PAT, admin/push 권한 확인됨).
+  토큰 값을 코드·로그·커밋에 절대 기록하지 않으며, 환경변수가 없으면 즉시 실패하고 드라이런으로 조용히 넘어가지 않는다.
+- 검수 repo에는 term-conflict 와 new-term-candidate 라벨이 아직 없으므로 Issue 동기화 전에 멱등하게 생성한다. 기존 라벨(bug, enhancement
+  등 GitHub 기본값)은 건드리지 않는다.
+- '이 Seed는 전체 사양(seed.yaml, AC 28개)을 구현 순서에 따라 3개 페이즈로 분할한 것 중 첫 번째다. 분할 이유는 오케스트레이터 플래너가 AC 28개를 7개 스테이지로
+  배정하려다 자기 위상 정렬을 위반해 실행이 시작되지 못했기 때문이다(ExecutionPlanningError: AC 10 depends on AC 20, but both are assigned
+  to stage 7). 사양 자체는 변경되지 않았다.'
+- 이 페이즈에서는 2단계(번역 생성·가드레일·검토 큐)와 3단계(GitHub Issue 동기화·Pages)를 구현하지 않는다. 다만 이후 페이즈가 이어붙일 수 있도록 모듈 경계와 산출물
+  포맷은 SERVICE.md 6절 구조를 따른다.
+acceptance_criteria:
+- description: 평가 집합은 깨끗한 코퍼스(2012-2016 발매, EN/KO text 존재, KO에 한글 포함) 980장에서 seed 42로 셔플해 hold-out 100
+    / train 880으로 나눈다. hold-out은 자산 구축 입력에서 완전히 배제한다.
+  semantic_ac_key: ac_fb9a4fc0c1ec987b
+- description: 자산 구축 배치는 통계 후보 생성 단계에서 LLM을 0회 호출한다. EN n-gram과 KO 어절 n-gram의 공기빈도, Dice/PMI, 최소 등장 5회로만
+    후보를 만들고 LLM은 Pydantic 구조화 출력으로 가부 판정만 수행한다.
+  semantic_ac_key: ac_775e230c574df807
+- description: '자산 구축 배치는 통계 후보 생성보다 먼저 미번역 레코드 필터링 단계를 수행한다. 세 가지 미번역 표현을 모두 제외한다: (1) 키가 없음, (2) 키는
+    있고 값이 null, (3) 값은 있으나 한글이 전혀 없음. 이 전처리 없이 충돌 제외 규칙을 적용하면 부제 용어의 54%가 용어집에서 사라진다(필터 후 15%로 감소).'
+  semantic_ac_key: ac_6a0cf31a29647efb
+- description: 자산 구축 배치는 v2/translations/ko/card_subtypes.json(부제 88항목), card_types.json, factions.json,
+    card_cycles.json, card_sets.json을 공식 용어집으로 그대로 로드하고 추출 대상에서 제외한다. 통계 추출은 룰 텍스트 내 용어에만 적용한다.
+  semantic_ac_key: ac_8708c898b97e7a9d
+- description: 용어 추출 알고리즘은 card_subtypes.json 88항목을 직접 채점 정답셋으로 사용해 정밀도·재현율을 보고한다.
+  semantic_ac_key: ac_9533b4b36edc7f44
+- description: 동일 EN 용어에 상이한 KO 역어가 존재하면 배치는 자동으로 정답을 고르지 않는다. 최신 발매일 채택과 최빈값 채택을 모두 사용하지 않고, 충돌을 conflicts.json으로
+    분리 출력하며 해당 용어를 용어집에서 제외한다.
+  semantic_ac_key: ac_a3e0dd99ba745007
+- description: TM 검색은 BM25와 dense 임베딩을 함께 쓰는 하이브리드여야 한다. 카드 텍스트가 짧고 고유명사가 많아 exact match 기여가 크기 때문이다.
+  semantic_ac_key: ac_e2b3780e7f9b3233
+- description: '페이즈 종료 게이트: 구축된 1단계 자산만으로 TM-only 베이스라인을 재현한다. hold-out 100장에 대해 TM 최근접 이웃의 KO를 그대로 답으로
+    삼았을 때 공식 KO 대비 정규화 편집거리(공백 정규화 후 1 - SequenceMatcher.ratio) 중앙값이 0.359 근방으로 재현되어야 한다. 이 값은 이후 회귀 감시선으로
+    쓰인다. 재현되지 않으면 자산 구축이나 hold-out 분할이 사양과 다르다는 뜻이므로 다음 페이즈로 넘어가지 않는다.'
+  semantic_ac_key: ac_d54f5a489f428d27
+ontology_schema:
+  name: SessionSettledContract
+  description: Requirements the session already settled, crystallized without an interview. Every entry
+    is verbatim host-supplied material — no LLM composed any part of this Seed.
+  fields: []
+evaluation_principles:
+- name: settled_requirements
+  description: Evaluate only the session-settled requirements.
+  weight: 1.0
+exit_conditions:
+- name: settled_requirements_met
+  description: All session-settled requirements are satisfied.
+  criteria: Every listed acceptance criterion passes.
+metadata:
+  seed_id: seed_2b8394080002_phase1
+  version: 1.0.0
+  created_at: '2026-09-16T06:06:43.521568Z'
+  ambiguity_score: 0.2
+  interview_id: session-context
+  parent_seed_id: seed_2b8394080002
+  generation_mode: normal
+  degraded: false
+  unresolved_slots: []
+  recovery_reason: null

@@ -189,3 +189,114 @@ def test_prompt_examples_match_the_official_translations():
     source = Path(build_judge_chain.__globals__["__file__"]).read_text(encoding="utf-8")
     assert "'trash'→'폐기'" in source
     assert "파기" not in source
+
+
+# ---------- 프롬프트 지문 ----------
+
+
+def test_fingerprint_is_recorded_on_every_judgment(tmp_path):
+    from term_judge import prompt_fingerprint
+
+    ckpt = tmp_path / "judgments.jsonl"
+    judge_candidates(cands("a"), FakeLLM({}), checkpoint_path=ckpt)
+    record = json.loads(ckpt.read_text(encoding="utf-8").splitlines()[0])
+    assert record["prompt_fingerprint"] == prompt_fingerprint()
+
+
+def test_fingerprint_changes_when_the_prompt_changes(monkeypatch):
+    import term_judge
+    from term_judge import prompt_fingerprint
+
+    before = prompt_fingerprint()
+    monkeypatch.setattr(term_judge, "SYSTEM_PROMPT", term_judge.SYSTEM_PROMPT + " edited")
+    assert prompt_fingerprint() != before
+
+
+def test_judgments_from_another_prompt_are_not_reused(tmp_path, monkeypatch):
+    """A prompt edit must invalidate the checkpoint, not silently reuse verdicts."""
+    import term_judge
+
+    ckpt = tmp_path / "judgments.jsonl"
+    judge_candidates(cands("a", "b"), FakeLLM({}), checkpoint_path=ckpt)
+
+    monkeypatch.setattr(term_judge, "SYSTEM_PROMPT", term_judge.SYSTEM_PROMPT + " edited")
+    second = FakeLLM({})
+    judge_candidates(cands("a", "b"), second, checkpoint_path=ckpt)
+    assert second.calls == ["a", "b"], "stale-prompt verdicts must be re-judged"
+
+
+def test_same_prompt_still_resumes(tmp_path):
+    ckpt = tmp_path / "judgments.jsonl"
+    judge_candidates(cands("a", "b"), FakeLLM({}), checkpoint_path=ckpt)
+    second = FakeLLM({})
+    judge_candidates(cands("a", "b"), second, checkpoint_path=ckpt)
+    assert second.calls == [], "unchanged prompt must reuse the checkpoint"
+
+
+def test_records_without_a_fingerprint_are_not_reused(tmp_path):
+    """Predates the field, so the prompt behind the verdict cannot be identified."""
+    ckpt = tmp_path / "judgments.jsonl"
+    ckpt.write_text(
+        json.dumps(
+            {"en_term": "a", "ko_term": "역a", "accepted": True, "reason": "x"},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    llm = FakeLLM({})
+    judge_candidates(cands("a"), llm, checkpoint_path=ckpt)
+    assert llm.calls == ["a"]
+
+
+def test_load_judgments_without_fingerprint_filter_reads_everything(tmp_path):
+    ckpt = tmp_path / "judgments.jsonl"
+    ckpt.write_text(
+        json.dumps(
+            {"en_term": "a", "ko_term": "역a", "accepted": True, "reason": "x"},
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert set(load_judgments(ckpt)) == {("a", "역a")}
+
+
+# ---------- 실패 시도 집계 ----------
+
+
+def test_attempt_failure_counter_tallies_by_exception_class():
+    """Unit-level: FakeLLM raises inside a RunnableLambda, which reports a chain
+    error rather than on_llm_error, so the handler is exercised directly here.
+    The real Bedrock path emits on_llm_error per failed call."""
+    from collections import Counter
+
+    from term_judge import _AttemptFailureCounter
+
+    sink = Counter()
+    handler = _AttemptFailureCounter(sink)
+    handler.on_llm_error(ValueError("throttled"))
+    handler.on_llm_error(ValueError("throttled"))
+    handler.on_llm_error(RuntimeError("other"))
+    assert dict(sink) == {"ValueError": 2, "RuntimeError": 1}
+
+
+def test_attempt_failures_are_reported_separately_from_dropped():
+    """dropped counts lost candidates; attempt_failures counts failed calls.
+    A pair that succeeds on its third try adds 2 here and 0 to dropped."""
+    seen = []
+    judge_candidates(
+        cands("a", "b"),
+        FakeLLM({"b": "raise"}, fail_with=ValueError("nope")),
+        on_progress=seen.append,
+    )
+    assert seen[-1]["dropped"] == 1
+    assert "attempt_failures" in seen[-1]
+    assert "attempt_failure_kinds" in seen[-1]
+
+
+def test_clean_run_reports_no_attempt_failures():
+    seen = []
+    judge_candidates(cands("a", "b"), FakeLLM({}), on_progress=seen.append)
+    assert seen[-1]["attempt_failures"] == 0
+    assert seen[-1]["dropped"] == 0

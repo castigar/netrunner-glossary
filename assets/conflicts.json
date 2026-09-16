@@ -488,38 +488,82 @@
     "source": "subtype"
   },
   {
+    "en_term": "hand size",
+    "ko_variants": [
+      "최대 핸드",
+      "최대 핸드 크기"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "maximum hand",
+    "ko_variants": [
+      "최대 핸드",
+      "최대 핸드 크기"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "pool",
+    "ko_variants": [
+      "크레딧 풀",
+      "풀"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
     "en_term": "spend [click]",
     "ko_variants": [
-      "[click]을 쓴다",
-      "비용으로 [click]을",
-      "추가 비용으로 [click]을"
+      "비용 [click] 쓰다",
+      "추가 비용 [click]"
     ],
     "source_card_ids": {},
     "source": "rule"
   },
   {
-    "en_term": "end the run",
+    "en_term": "trash cost",
     "ko_variants": [
-      "런을 종료한다",
-      "종료한다"
+      "카드 폐기 비용",
+      "폐기 비용"
     ],
     "source_card_ids": {},
     "source": "rule"
   },
   {
-    "en_term": "damage [subroutine]",
+    "en_term": "faceup",
     "ko_variants": [
-      "1점을 입힌다 [subroutine]",
-      "입힌다 [subroutine]"
+      "앞면",
+      "앞면 설치"
     ],
     "source_card_ids": {},
     "source": "rule"
   },
   {
-    "en_term": "unrezzed",
+    "en_term": "your turn begins",
     "ko_variants": [
-      "레즈되지",
-      "레즈되지 않은"
+      "차례 시작",
+      "차례 시작 때"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "end",
+    "ko_variants": [
+      "런 종료",
+      "종료"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "code gate",
+    "ko_variants": [
+      "게이트",
+      "코드 게이트"
     ],
     "source_card_ids": {},
     "source": "rule"
@@ -534,64 +578,29 @@
     "source": "rule"
   },
   {
-    "en_term": "meat damage",
-    "ko_variants": [
-      "육체 피해",
-      "육체 피해를"
-    ],
-    "source_card_ids": {},
-    "source": "rule"
-  },
-  {
     "en_term": "spend",
     "ko_variants": [
-      "쓴다",
-      "추가 비용으로 [click]을"
+      "비용 [click]",
+      "비용 [click] 쓰다",
+      "쓰다"
     ],
     "source_card_ids": {},
     "source": "rule"
   },
   {
-    "en_term": "virus counters",
+    "en_term": "advancement tokens",
     "ko_variants": [
-      "바이러스 카운터",
-      "바이러스 카운터를"
+      "발전 수",
+      "발전 토큰"
     ],
     "source_card_ids": {},
     "source": "rule"
   },
   {
-    "en_term": "rez",
+    "en_term": "runs",
     "ko_variants": [
-      "레즈",
-      "레즈할"
-    ],
-    "source_card_ids": {},
-    "source": "rule"
-  },
-  {
-    "en_term": "access",
-    "ko_variants": [
-      "액세스한다",
-      "액세스할"
-    ],
-    "source_card_ids": {},
-    "source": "rule"
-  },
-  {
-    "en_term": "reveal",
-    "ko_variants": [
-      "공개한",
-      "공개한다"
-    ],
-    "source_card_ids": {},
-    "source": "rule"
-  },
-  {
-    "en_term": "steal",
-    "ko_variants": [
-      "훔치기",
-      "훔칠"
+      "런 수행",
+      "수행"
     ],
     "source_card_ids": {},
     "source": "rule"

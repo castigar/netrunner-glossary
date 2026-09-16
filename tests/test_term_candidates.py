@@ -71,19 +71,22 @@ def test_extract_en_ngrams_empty_text():
 
 
 def test_extract_ko_eojeol_unigrams():
+    """Eojeol are reduced to content stems: 프로그램을 -> 프로그램, 설치한다 -> 설치."""
     result = _extract_ko_eojeol_ngrams("프로그램을 설치한다", max_n=1)
-    assert "프로그램을" in result
-    assert "설치한다" in result
+    assert "프로그램" in result
+    assert "설치" in result
+    assert "설치한다" not in result
 
 
 def test_extract_ko_eojeol_bigrams():
     result = _extract_ko_eojeol_ngrams("프로그램을 설치한다", max_n=2)
-    assert "프로그램을 설치한다" in result
+    assert "프로그램 설치" in result
 
 
 def test_extract_ko_eojeol_trigrams():
+    """Function-word eojeol ('이') vanish, so the trigram is over content stems."""
     result = _extract_ko_eojeol_ngrams("이 카드를 파기하여 크레딧을 얻는다", max_n=3)
-    assert "이 카드를 파기하여" in result
+    assert "카드 파기 크레딧" in result
 
 
 def test_extract_ko_eojeol_empty_text():
@@ -92,7 +95,7 @@ def test_extract_ko_eojeol_empty_text():
 
 def test_extract_ko_eojeol_single_token():
     result = _extract_ko_eojeol_ngrams("설치한다", max_n=2)
-    assert "설치한다" in result
+    assert "설치" in result
     # no bigrams possible from single token
     assert len([r for r in result if " " in r]) == 0
 
@@ -127,9 +130,11 @@ _LLM_PACKAGES = {"langchain", "langchain_core", "langchain_openai", "anthropic",
 
 
 def _import_guard(name: str, *args, **kwargs):
-    """Allow all imports except LLM packages."""
-    import builtins
+    """Allow all imports except LLM packages.
 
+    Must not import anything itself — this runs *as* __import__ while
+    __import__ is patched, so an import here re-enters the guard forever.
+    """
     if any(name.startswith(pkg) for pkg in _LLM_PACKAGES):
         raise _LLMImportError(
             f"generate_candidates() must not import '{name}' — 0 LLM calls required"
@@ -237,10 +242,12 @@ def test_pmi_positive_for_strongly_associated_pairs():
     """Pairs that co-occur more than independence predicts should have positive PMI.
 
     For PMI > 0 we need P(A,B) > P(A)*P(B).
-    Design: "install"→"설치한다" appears together in 5 of 10 cards.
+    Design: "install"→"설치" appears together in 5 of 10 cards.
     "install" alone (with other KO text) appears in 0 extra cards,
-    "설치한다" alone appears in 0 extra cards.
+    "설치" alone appears in 0 extra cards.
     So P(A)=P(B)=0.5, P(A,B)=0.5 → PMI=log2(0.5/(0.5*0.5))=log2(2)=1.0>0.
+
+    The KO side is the stem 설치, not the inflected 설치한다 the card carries.
     """
     exclusive_pairs = [
         {"en_text": "install a program", "ko_text": "프로그램을 설치한다"}
@@ -253,12 +260,12 @@ def test_pmi_positive_for_strongly_associated_pairs():
     ]
     candidates = generate_candidates(exclusive_pairs + filler_pairs, min_cooccur=5)
     install_pair = next(
-        (c for c in candidates if c.en_term == "install" and "설치한다" in c.ko_term),
+        (c for c in candidates if c.en_term == "install" and c.ko_term == "설치"),
         None,
     )
     assert install_pair is not None
     assert install_pair.pmi > 0.0, (
-        f"install→설치한다 co-occurs 5/10 with P(A)=P(B)=0.5; "
+        f"install→설치 co-occurs 5/10 with P(A)=P(B)=0.5; "
         f"PMI should be log2(2)=1.0 > 0, got {install_pair.pmi}"
     )
 
@@ -497,3 +504,71 @@ def test_ko_surface_forms_merge_into_one_term():
     assert [(c.en_term, c.ko_term, c.cooccurrence) for c in candidates] == [
         ("may", "있다", 2)
     ]
+
+
+# ---------------------------------------------------------------------------
+# 형태소 정규화 (kiwipiepy)
+# ---------------------------------------------------------------------------
+
+
+def test_inflected_forms_collapse_to_one_term():
+    """설치할 / 설치된 / 설치한다 were three terms; the judge saw them as three."""
+    pairs = [
+        {"en_text": "install", "ko_text": "설치할"},
+        {"en_text": "install", "ko_text": "설치된"},
+        {"en_text": "install", "ko_text": "설치한다"},
+    ]
+    candidates = generate_candidates(
+        pairs, min_cooccur=3, max_en_terms=None, top_k_per_en=None
+    )
+    assert [(c.en_term, c.ko_term, c.cooccurrence) for c in candidates] == [
+        ("install", "설치", 3)
+    ]
+
+
+def test_particles_are_stripped():
+    """서버를 and 서버 are the same term; the particle split their cooccurrence."""
+    pairs = [
+        {"en_text": "server", "ko_text": "서버를"},
+        {"en_text": "server", "ko_text": "서버"},
+    ]
+    candidates = generate_candidates(
+        pairs, min_cooccur=2, max_en_terms=None, top_k_per_en=None
+    )
+    assert ("server", "서버") in {(c.en_term, c.ko_term) for c in candidates}
+
+
+def test_game_symbols_survive_morphological_analysis():
+    """Kiwi shatters '[credit]' into '[' + 'credit' + ']' unless it is protected."""
+    result = _extract_ko_eojeol_ngrams("2[credit]을 지불한다", max_n=1)
+    assert "2 [credit]" in result
+    assert "credit" not in result
+
+
+def test_function_word_only_eojeol_disappears():
+    assert _extract_ko_eojeol_ngrams("당신의", max_n=1) == []
+
+
+def test_light_verb_is_dropped_so_constructions_agree():
+    """Kiwi tags 하 in 설치할 as XSV but in 레즈할 as VV; without dropping the
+    verb-tagged light verb, 레즈할 would become '레즈 하다' and 설치할 '설치'."""
+    from ko_morphology import normalize_eojeol
+
+    assert normalize_eojeol("레즈할") == "레즈"
+    assert normalize_eojeol("설치할") == "설치"
+
+
+def test_real_verbs_are_lemmatised_not_dropped():
+    from ko_morphology import normalize_eojeol
+
+    assert normalize_eojeol("뽑는다") == "뽑다"
+
+
+def test_morphology_makes_zero_llm_calls():
+    from pathlib import Path as _Path
+
+    import ko_morphology
+
+    source = _Path(ko_morphology.__file__).read_text(encoding="utf-8")
+    for name in ("langchain", "openai", "anthropic", "boto3", "bedrock"):
+        assert name not in source, f"ko_morphology must not reference {name!r}"

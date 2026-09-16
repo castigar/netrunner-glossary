@@ -19,7 +19,9 @@ Pipeline order is fixed by SERVICE.md §6 and the order matters:
 4. Extract terms on **two separate paths** (SERVICE.md §6, 결정 ①):
    - 부제 경로: the ``keywords`` field, positionally aligned EN<->KO.  Candidates
      are whole field elements, so the 88-entry gold set scores it directly.
-   - 룰 경로: the ``text`` field, n-gram statistics capped in two stages — the
+   - 룰 경로: the ``text`` field, morphologically normalized so inflected forms
+     collapse (설치할/설치된/설치한다 -> 설치), then n-gram statistics capped in
+     two stages — the
      most frequent EN terms, then their best KO candidates by Dice.  Uncapped
      this yields ~75k candidates, at which scale LLM adjudication is
      meaningless before it is expensive.  A single global Dice cap was tried
@@ -161,11 +163,17 @@ def build_assets(
     subtype_eval = evaluate_extraction(subtype_result.pairs, gold_subtypes)
 
     # 4b. 룰 경로 — text field n-grams, capped at top_n by Dice.  Zero LLM calls.
+    # The official KO terms go to the morphological analyzer as proper nouns so
+    # it does not split them (코드 게이트 -> 코드 / 게이트).
+    ko_user_words = tuple(
+        sorted({term for term in official.all_terms().values() if term.strip()})
+    )
     candidates = generate_candidates(
         corpus,
         min_cooccur=min_cooccur,
         max_en_terms=max_en_terms,
         top_k_per_en=top_k_per_en,
+        ko_user_words=ko_user_words,
     )
     candidates = [
         c for c in candidates if c.en_term.lower() not in official.excluded_ids

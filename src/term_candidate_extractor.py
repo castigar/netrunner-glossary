@@ -39,6 +39,8 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 
+from ko_morphology import normalize_eojeol
+
 
 _MARKUP = re.compile(r"</?[a-zA-Z][^>]*>")
 
@@ -76,16 +78,25 @@ def _normalize_ko_token(token: str) -> str:
     return _MARKUP.sub("", token).strip(_KO_EDGE_PUNCT)
 
 
-def _extract_ko_eojeol_ngrams(text: str, max_n: int = 3) -> list[str]:
+def _extract_ko_eojeol_ngrams(
+    text: str, max_n: int = 3, ko_user_words: tuple[str, ...] = ()
+) -> list[str]:
     """Extract 1..max_n eojeol n-grams from KO text.
 
-    Korean eojeol (어절) are whitespace-delimited units, normalized to shed
-    markup and edge punctuation.  Game symbols like [credit] are preserved.
-
-    Particles (조사) are left attached — separating them needs a morphological
-    analyzer, which this pipeline does not have.
+    Korean eojeol (어절) are whitespace-delimited units.  Each is stripped of
+    markup and edge punctuation, then reduced to its content-morpheme stems by
+    ko_morphology, so 설치할 / 설치된 / 설치한다 count as one term instead of three.
+    Game symbols like [credit] survive both steps.
     """
-    tokens = [t for t in (_normalize_ko_token(t) for t in text.split()) if t]
+    tokens = [
+        normalized
+        for normalized in (
+            normalize_eojeol(stripped, ko_user_words)
+            for stripped in (_normalize_ko_token(t) for t in text.split())
+            if stripped
+        )
+        if normalized
+    ]
     ngrams: list[str] = []
     for n in range(1, max_n + 1):
         for i in range(len(tokens) - n + 1):
@@ -116,6 +127,7 @@ def generate_candidates(
     min_cooccur: int = 5,
     max_en_terms: int | None = DEFAULT_MAX_EN_TERMS,
     top_k_per_en: int | None = DEFAULT_TOP_K_PER_EN,
+    ko_user_words: tuple[str, ...] = (),
 ) -> list[TermCandidate]:
     """Generate term candidates using only corpus statistics — 0 LLM calls.
 
@@ -129,6 +141,8 @@ def generate_candidates(
                       cooccurrence. None keeps every EN term.
         top_k_per_en: Within each kept EN term, keep its *top_k_per_en* highest
                       Dice candidates. None keeps every candidate.
+        ko_user_words: Domain terms registered with the morphological analyzer
+                      as proper nouns, so it does not split them.
 
     Returns:
         List of TermCandidate, sorted by Dice coefficient descending.  Only pairs
@@ -149,7 +163,7 @@ def generate_candidates(
         ko_text = pair.get(ko_field, "") or ""
 
         en_ngrams = set(_extract_en_ngrams(en_text, max_n))
-        ko_ngrams = set(_extract_ko_eojeol_ngrams(ko_text, max_n))
+        ko_ngrams = set(_extract_ko_eojeol_ngrams(ko_text, max_n, ko_user_words))
 
         for en_ng in en_ngrams:
             en_freq[en_ng] += 1

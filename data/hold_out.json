@@ -1,0 +1,602 @@
+[
+  {
+    "id": "net_celebrity",
+    "en_text": "This card is not trashed until another <strong>current</strong> is played or an agenda is scored.\n1[recurring-credit]\nUse this credit during a run.",
+    "ko_text": "이 카드는 다른 <strong>동향</strong>이 플레이되거나, 기업이 아젠다를 득점하기 전에는 폐기되지 않는다.\n1[recurring-credit]\n런 중에만 이 크레딧을 사용한다.",
+    "date": "2014-08-15"
+  },
+  {
+    "id": "code_siphon",
+    "en_text": "Run R&D. If successful, instead of breaching R&D, you may search your stack for 1 program. Install it, paying 3[credit] less for each piece of ice protecting R&D, and then take 1 tag.",
+    "ko_text": "연구개발부(R&D)로 런을 수행한다. 성공하면, 카드를 액세스하는 대신 당신의 스택으로부터 프로그램 하나를 찾아, 연구개발부(R&D)를 보호하는 아이스당 설치비용을 3만큼 낮춰 설치할 수 있다. 그렇게 한다면 태그 1개를 가져간다. 당신의 스택을 섞는다.",
+    "date": "2014-12-18"
+  },
+  {
+    "id": "snatch_and_grab",
+    "en_text": "Trace[3]. If successful, trash 1 <strong>connection</strong>. The Runner can take 1 tag to prevent this.",
+    "ko_text": "<trace>추적 3</trace> 성공하면, <strong>연결</strong> 하나를 폐기한다. 러너는 이를 방지하기 위해 태그 1개를 받을 수 있다.",
+    "date": "2014-11-13"
+  },
+  {
+    "id": "harvester",
+    "en_text": "[subroutine] The Runner draws 3 cards and then discards down to their maximum hand size.\n[subroutine] The Runner draws 3 cards and then discards down to their maximum hand size.",
+    "ko_text": "[subroutine] 러너는 카드 3장을 뽑고, 자신의 최대 핸드 크기가 되도록 카드를 버린다.\n[subroutine] 러너는 카드 3장을 뽑고, 자신의 최대 핸드 크기가 되도록 카드를 버린다.",
+    "date": "2016-03-11"
+  },
+  {
+    "id": "force_of_nature",
+    "en_text": "Interface → <strong>2[credit]:</strong> Break up to 2 <strong>code gate</strong> subroutines.\n<strong>1[credit]:</strong> +1 strength.",
+    "ko_text": "2[credit]: <strong>코드 게이트</strong> 서브루틴을 2개까지 깬다.\n1[credit]: 힘을 +1한다.",
+    "date": "2013-03-21"
+  },
+  {
+    "id": "cyber_cypher",
+    "en_text": "When you install this program, choose a server. Use this program only during runs on the chosen server.\nInterface → <strong>1[credit]:</strong> Break 1 <strong>code gate</strong> subroutine.\n<strong>1[credit]:</strong> +1 strength.",
+    "ko_text": "1[credit]: <strong>코드 게이트</strong> 서브루틴을 깬다.\n1[credit]: 힘을 +1 한다.\n당신이 사이버-사이퍼를 설치할 때, 서버 하나를 선택한다. 사이버-사이퍼는 선택한 서버로 런을 수행하는 중에만 사용할 수 있다.",
+    "date": "2013-07-29"
+  },
+  {
+    "id": "restructure",
+    "en_text": "Gain 15[credit].",
+    "ko_text": "15[credit]를 얻는다.",
+    "date": "2013-11-07"
+  },
+  {
+    "id": "searchlight",
+    "en_text": "Searchlight can be advanced. X is the number of advancement tokens on Searchlight.\n[subroutine]Trace[X]. If successful, give the Runner 1 tag.\n[subroutine]Trace[X]. If successful, give the Runner 1 tag.",
+    "ko_text": "탐조등은 발전될 수 있다. X는 탐조등에 놓인 발전 토큰의 개수이다.\n[subroutine] <trace>추적 X</trace> 성공하면, 러너에게 태그 1개를 준다.\n[subroutine] <trace>추적 X</trace> 성공하면, 러너에게 태그 1개를 준다.",
+    "date": "2015-01-28"
+  },
+  {
+    "id": "emptied_mind",
+    "en_text": "When your turn begins, gain [click] if you have no cards in your grip.",
+    "ko_text": "당신의 차례가 시작될 때, 당신의 그립에 카드가 없다면 [click]을 얻는다.",
+    "date": "2016-05-26"
+  },
+  {
+    "id": "expert_schedule_analyzer",
+    "en_text": "<strong>[click]:</strong> Run HQ. If successful, instead of breaching HQ, you may reveal all cards in HQ.",
+    "ko_text": "[click]: 본부(HQ)로 런을 수행한다. 성공하면 카드를 액세스하는 대신, 당신은 본부(HQ)의 모든 카드를 공개할 수 있다.",
+    "date": "2013-12-13"
+  },
+  {
+    "id": "muresh_bodysuit",
+    "en_text": "[interrupt] → The first time each turn you would suffer meat damage, prevent 1 meat damage.",
+    "ko_text": "매 차례 첫 번째 육체 피해를 방지한다.",
+    "date": "2013-02-14"
+  },
+  {
+    "id": "taurus",
+    "en_text": "[subroutine] Trace[2]. If successful, trash 1 piece of hardware. If your trace strength is 5 or greater, trash 1 piece of hardware.",
+    "ko_text": "[subroutine] <trace>추적 2</trace> 성공하면, 하드웨어 하나를 폐기한다. 당신의 추적 힘이 5 이상이라면, 하드웨어 하나를 폐기한다.",
+    "date": "2014-07-25"
+  },
+  {
+    "id": "changeling",
+    "en_text": "Changeling can be advanced.\nWhile Changeling has an odd number of advancement tokens on it, it gains <strong>sentry</strong> and loses <strong>barrier</strong>.\n[subroutine] End the run.",
+    "ko_text": "체인즐링은 발전될 수 있다.\n체인즐링 위에 홀수 개의 발전 토큰이 있다면, 체인즐링은 <strong>방벽</strong>을 잃고 <strong>파수</strong>를 얻는다.\n[subroutine] 런을 종료한다.",
+    "date": "2014-10-16"
+  },
+  {
+    "id": "hostile_takeover",
+    "en_text": "When you score this agenda, gain 7[credit] and take 1 bad publicity.",
+    "ko_text": "당신이 적대적 매수를 득점할 때 7[credit]을 얻고, 악평 1개를 갖는다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "trope",
+    "en_text": "When your turn begins, place 1 power counter on Trope.\n[click], <strong>remove Trope from the game:</strong> Shuffle 1 card from your heap into your stack for each power counter on Trope.",
+    "ko_text": "당신의 차례가 시작될 때, 변화에 파워 카운터 1개를 놓는다.\n[click], <strong>변화를 게임에서 제거</strong>: 변화에 놓인 각 파워 카운터마다 당신의 힙으로부터 1장의 카드를 당신의 스택에 섞어 넣는다.",
+    "date": "2015-08-06"
+  },
+  {
+    "id": "the_foundry_refining_the_process",
+    "en_text": "The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.",
+    "ko_text": "매 차례마다 당신이 처음으로 아이스를 레즈할 때, 당신은 연구개발부(R&D)로부터 그 아이스와 동일한 또 다른 아이스를 찾아, 그것을 공개하고, 본부(HQ)에 더할 수 있다. 연구개발부(R&D)를 섞는다.",
+    "date": "2014-08-15"
+  },
+  {
+    "id": "scrubber",
+    "en_text": "2[recurring-credit] <em>(When you install this card and before your turn begins, refill to 2 hosted credits.)</em>\nYou can spend hosted credits to pay trash costs.",
+    "ko_text": "2[recurring-credit]\n카드를 폐기할 때만 이 크레딧을 사용한다.",
+    "date": "2013-03-21"
+  },
+  {
+    "id": "desperado",
+    "en_text": "+1[mu]\nGain 1[credit] whenever you make a successful run.\nLimit 1 <strong>console</strong> per player.",
+    "ko_text": "+1[mu]\n당신이 런에 성공할 때마다 1[credit]을 얻는다.\n<strong>콘솔</strong>은 플레이어당 1개로 제한된다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "deep_red",
+    "en_text": "+3[mu]\nUse the MU on Deep Red only for <strong>Caïssa</strong> programs.\nWhenever you install a <strong>Caïssa</strong> program, you may trigger its [click] ability without spending [click].\nLimit 1 <strong>console</strong> per player.",
+    "ko_text": "+3[mu]\n딥 레드의 메모리는 <strong>카이사</strong> 프로그램에만 사용한다.\n당신이 <strong>카이사</strong> 프로그램을 설치할 때마다, 그 프로그램의 [click] 능력을 [click]을 지불하지 않고 발동시킬 수 있다.\n<strong>콘솔</strong>은 플레이어당 1개로 제한된다.",
+    "date": "2013-12-13"
+  },
+  {
+    "id": "paper_tripping",
+    "en_text": "Play only as your first [click].\nRemove all tags.",
+    "ko_text": "당신의 첫 번째 [click]으로만 플레이할 수 있다.\n모든 태그를 제거한다.",
+    "date": "2014-07-25"
+  },
+  {
+    "id": "rebirth",
+    "en_text": "Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it.\nLimit 1 per deck.",
+    "ko_text": "당신의 ID를 같은 소속의 다른 ID와 바꾼다. 환생은 폐기되는 대신 게임에서 제거된다.\n덱당 1장으로 제한된다.",
+    "date": "2016-05-26"
+  },
+  {
+    "id": "same_old_thing",
+    "en_text": "[click], [click], [trash]: Play an event from your heap (paying its play cost).",
+    "ko_text": "[click], [click], [trash]: 힙으로부터 이벤트 하나를 플레이한다 (플레이 비용은 지불한다).",
+    "date": "2013-07-29"
+  },
+  {
+    "id": "shipment_from_sansan",
+    "en_text": "As an additional cost to play this operation, spend [click].\nPlace up to 2 advancement tokens on a card that can be advanced.",
+    "ko_text": "이 운영을 플레이하기 위한 추가 비용으로 [click]을 쓴다.\n발전될 수 있는 카드 하나에 발전 토큰을 2개까지 놓는다.",
+    "date": "2013-11-07"
+  },
+  {
+    "id": "corporate_war",
+    "en_text": "If you have at least 7[credit] when you score Corporate War, gain 7[credit]; otherwise, lose all credits in your credit pool.",
+    "ko_text": "당신이 기업 간의 전쟁을 득점할 때, 최소 7[credit]를 가지고 있다면, 7[credit]을 얻는다; 허나 그렇지 않다면, 크레딧 풀에 있는 모든 크레딧을 잃는다.",
+    "date": "2013-05-30"
+  },
+  {
+    "id": "precognition",
+    "en_text": "Look at the top 5 cards of R&D and arrange them in any order.",
+    "ko_text": "연구개발부(R&D)의 맨 위 카드 5장을 본 다음, 원하는 순서대로 재배열한다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "reversed_accounts",
+    "en_text": "You can advance this asset.\n[click], [trash]<strong>:</strong> The Runner loses 4[credit] for each hosted advancement counter.",
+    "ko_text": "뒤바뀐 계좌는 발전될 수 있다.\n[click], [trash]: 러너는 뒤바뀐 계좌에 있는 발전 토큰 1개당 4[credit]을 잃는다.",
+    "date": "2014-10-16"
+  },
+  {
+    "id": "rigged_results",
+    "en_text": "Secretly spend up to 2[credit]. The Corp guesses how much you spent. Reveal spent credits. If the Corp guessed incorrectly, choose a piece of ice protecting a server and run that server. The first time during this run you encounter the chosen ice, bypass it.",
+    "ko_text": "비밀리에 2[credit]까지 쓴다. 기업은 당신이 얼마나 썼는지 추측한다. 쓴 크레딧을 공개한다. 기업의 추측이 틀렸다면, 런을 수행하고 공격당한 서버를 보호하는 아이스 하나를 선택한다. 당신이 선택한 아이스와 대치하면 그것을 우회한다.",
+    "date": "2016-06-16"
+  },
+  {
+    "id": "muertos_gang_member",
+    "en_text": "When you install Muertos Gang Member, the Corp must derez a card.\nWhen Muertos Gang Member is uninstalled, the Corp may rez a card, ignoring the rez cost.\n[trash]: Draw 1 card.",
+    "ko_text": "당신이 무에토스 갱 단원을 설치할 때, 기업은 카드 하나를 디레즈한다.\n무에토스 갱 단원이 설치 해제될 때, 기업은 카드 하나를 레즈 비용을 무시하고 레즈할 수 있다.\n[trash]: 카드 1장을 뽑는다.",
+    "date": "2015-07-02"
+  },
+  {
+    "id": "rutherford_grid",
+    "en_text": "The base trace strength of each trace during a run on this server is increased by 2.\nLimit 1 <strong>region</strong> per server.",
+    "ko_text": "이 서버를 대상으로 한 런이 수행되는 동안에 모든 추적의 기본 추적 능력이 2씩 증가한다.\n<strong>지역</strong>은 서버당 1개로 제한된다.",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "comet",
+    "en_text": "+1[mu]\nThe first time you play an event each turn, you may play another event (without spending a click) after the first one resolves.\nLimit 1 <strong>console</strong> per player.",
+    "ko_text": "+1[mu]\n매 차례마다 당신이 처음으로 이벤트를 플레이할 때, 당신은 그 이벤트의 효과가 발휘된 다음 다른 이벤트 하나를 플레이할 수 있다.(클릭을 쓰지 않는다)\n<strong>콘솔</strong>은 플레이어당 하나로 제한된다.",
+    "date": "2015-04-24"
+  },
+  {
+    "id": "jinteki_personal_evolution",
+    "en_text": "Whenever an agenda is scored or stolen, do 1 net damage.",
+    "ko_text": "당신이 아젠다를 득점하거나 러너가 아젠다를 훔치면, 넷 피해를 1점 입힌다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "sensie_actors_union",
+    "en_text": "When your turn begins, you may draw 3 cards if there is no ice protecting this server. If you do, add 1 card from HQ to the bottom of R&D.",
+    "ko_text": "당신의 차례가 시작될 때 이 서버를 보호하는 아이스가 없다면, 카드 3장을 뽑을 수 있다. 그렇게 하면, 본부(HQ)로부터 카드 1장을 연구개발부(R&D) 맨 밑에 더한다.",
+    "date": "2016-04-01"
+  },
+  {
+    "id": "andromeda_dispossessed_ristie",
+    "en_text": "You draw a starting hand of 9 cards.",
+    "ko_text": "시작 핸드로 9장의 카드를 뽑는다.",
+    "date": "2013-05-02"
+  },
+  {
+    "id": "forked",
+    "en_text": "Run any server. The first time you fully break a <strong>sentry</strong> during that run, trash that <strong>sentry</strong>.",
+    "ko_text": "런을 수행한다. 당신이 이번 런에 처음으로  <strong>파수</strong>의 모든 서브루틴을 깨면, 그 <strong>파수</strong>를 폐기한다.",
+    "date": "2015-01-28"
+  },
+  {
+    "id": "cerberus_cuj_0_h3",
+    "en_text": "When you install this program, place 4 power counters on it.\nInterface → <strong>Hosted power counter:</strong> Break up to 2 <strong>sentry</strong> subroutines.\n<strong>1[credit]:</strong> +1 strength.",
+    "ko_text": "케르베로스 \"Cuj.0\" H3가 설치될 때, 파워 카운터 4개를 위에 놓는다.\n<strong>호스트된 파워 카운터</strong>: <strong>파수</strong> 서브루틴을 2개까지 깬다.\n1[credit]: 힘을 +1한다.",
+    "date": "2014-11-13"
+  },
+  {
+    "id": "rolodex",
+    "en_text": "When you install Rolodex, look at the top 5 cards of your stack and arrange them in any order.\nWhen Rolodex is trashed, trash the top 3 cards of your stack.",
+    "ko_text": "당신이 주소록을 설치할 때, 당신의 스택 맨 위 카드 5장을 확인하고 원하는대로 재배열한다.\n주소록이 폐기되면, 당신의 스택 맨 위 카드 3장을 폐기한다.",
+    "date": "2015-08-06"
+  },
+  {
+    "id": "exploratory_romp",
+    "en_text": "Run any server. If successful, instead of breaching that server, remove up to 3 advancement counters from 1 card in the root of or protecting the attacked server.",
+    "ko_text": "런을 수행한다. 성공하면, 카드를 액세스하는 대신, 공격한 서버의 안에 있는 카드 혹은 공격한 서버를 보호하는 카드로부터 발전 토큰 3개를 제거한다.",
+    "date": "2013-07-29"
+  },
+  {
+    "id": "ichi_1_0",
+    "en_text": "<strong>Lose [click]:</strong> Break 1 subroutine on this ice. Only the Runner can use this ability.\n[subroutine] Trash 1 installed program.\n[subroutine] Trash 1 installed program.\n[subroutine] Trace[1]. If successful, do 1 core damage and give the Runner 1 tag.",
+    "ko_text": "러너는 [click]을 써서 이치 1.0에서 원하는 서브루틴을 깰 수 있다.\n[subroutine] 프로그램 1개를 폐기한다.\n[subroutine] 프로그램 1개를 폐기한다.\n[subroutine] <trace>추적 1</trace> 성공하면, 러너에게 태그 1개를 주고 두뇌 피해 1점을 입힌다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "komainu",
+    "en_text": "When the Runner encounters this ice, it gains X \"[subroutine] Do 1 net damage.\" subroutines for the remainder of this run. X is equal to the number of cards in the grip.",
+    "ko_text": "러너가 코마이누와 대치할 때, 이번 남은 런 동안 코마이누는 러너의 그립에 있는 카드마다 \"[subroutine] 넷 피해 1점을 입힌다.\"를 얻는다.",
+    "date": "2014-05-02"
+  },
+  {
+    "id": "injection_attack",
+    "en_text": "Choose 1 installed <strong>icebreaker</strong> and run any server. During that run, the chosen <strong>icebreaker</strong> gets +2 strength.",
+    "ko_text": "런을 수행하고 <strong>아이스브레이커</strong> 하나를 선택한다. 그 <strong>아이스브레이커</strong>는 이번 런 동안 +2 힘을 갖는다.",
+    "date": "2016-07-14"
+  },
+  {
+    "id": "franchise_city",
+    "en_text": "While the Runner is accessing an agenda in R&D, they must reveal it.\nWhen the Runner accesses an agenda, add this asset to your score area as an agenda worth 1 agenda point.",
+    "ko_text": "러너가 아젠다에 액세스할 때, 프랜차이즈 도시를 당신의 점수 영역에 아젠다 점수 1점인 아젠다로써 더한다.",
+    "date": "2015-09-03"
+  },
+  {
+    "id": "box_e",
+    "en_text": "+2[mu]\nYour maximum hand size is increased by 2.\nLimit 1 <strong>console</strong> per player.",
+    "ko_text": "+2[mu]\n당신의 최대 핸드 크기를 2만큼 증가시킨다.\n<strong>콘솔</strong>은 플레이어당 1장으로 제한된다.",
+    "date": "2014-09-15"
+  },
+  {
+    "id": "darwin",
+    "en_text": "Interface → 2[credit]: Break 1 subroutine.\nX is equal to the number of hosted virus counters.\nWhen your turn begins, you may pay 1[credit] to place 1 virus counter on this program.",
+    "ko_text": "2[credit]: 아이스의 서브루틴을 깬다.\nX는 다윈에 놓인 바이러스 카운터의 개수이다.\n당신의 차례가 시작될 때, 당신은 1[credit]을 지불하여 다윈에 바이러스 카운터 1개를 놓을 수 있다.",
+    "date": "2013-05-30"
+  },
+  {
+    "id": "bandwidth",
+    "en_text": "[subroutine] Give the Runner 1 tag. If this run is successful, the Runner removes 1 tag.",
+    "ko_text": "[subroutine] 러너에게 태그 1개를 준다. 이번 런이 성공하면, 러너는 태그 1개를 제거한다.",
+    "date": "2015-04-03"
+  },
+  {
+    "id": "unorthodox_predictions",
+    "en_text": "When you score Unorthodox Predictions, choose <strong>sentry</strong>, <strong>code gate</strong> or <strong>barrier</strong>. Subroutines on ice of the chosen type cannot be broken until the beginning of your next turn.",
+    "ko_text": "당신이 이례적인 예측을 득점할 때, <strong>파수</strong>, <strong>코드 게이트</strong>, <strong>방벽</strong> 중 하나를 선택한다.\n선택한 타입의 아이스 서브루틴들은 당신의 다음 차례가 시작될 때까지 깨지지 않는다.",
+    "date": "2013-12-13"
+  },
+  {
+    "id": "multithreader",
+    "en_text": "2[recurring-credit]\nUse these credits to pay for using programs.",
+    "ko_text": "2[recurring-credit]\n프로그램을 사용할 때에만 이 크레딧을 사용한다.",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "disrupter",
+    "en_text": "[interrupt] → [trash]: Reduce the base trace strength of a trace to 0.",
+    "ko_text": "[trash]: 추적을 방지한다. 해당 추적은 기본 추적 힘이 0인 상태로 다시 시작한다.",
+    "date": "2013-03-21"
+  },
+  {
+    "id": "hudson_1_0",
+    "en_text": "<strong>Lose [click]:</strong> Break 1 subroutine on this ice. Only the Runner can use this ability.\n[subroutine] The Runner cannot access more than 1 card during this run.\n[subroutine] The Runner cannot access more than 1 card during this run.",
+    "ko_text": "러너는 [click]을 써서 허드슨 1.0에서 원하는 서브루틴을 깰 수 있다.\n[subroutine] 러너는 이번 런 동안 1장을 초과하여 카드에 액세스 할 수 없다.\n[subroutine] 러너는 이번 런 동안 1장을 초과하여 카드에 액세스 할 수 없다.",
+    "date": "2013-12-13"
+  },
+  {
+    "id": "crisium_grid",
+    "en_text": "Runs against this server cannot be declared successful. <em>(This effect does not cause runs to become unsuccessful.)</em>\nLimit 1 <strong>region</strong> per server.",
+    "ko_text": "이 서버를 대상으로 수행되는 성공적인 런은 카드 능력을 사용하기 위한 목적의 성공적이거나 실패한 런으로 간주되지 않는다.\n<strong>지역</strong>은 서버당 1개로 제한된다.",
+    "date": "2014-09-15"
+  },
+  {
+    "id": "voting_machine_initiative",
+    "en_text": "Place 3 agenda counters on Voting Machine Initiative when you score it.\nWhen the Runner's turn begins, you may spend 1 hosted agenda counter. If you do, the Runner loses [click], if able.",
+    "ko_text": "당신이 투표기 도입 계획을 득점할 때 이 위에 아젠다 카운터 3개를 놓는다.\n러너의 차례가 시작될 때, 당신은 호스트된 아젠다 카운터 1개를 쓸 수 있다. 그렇게 하면 러너는 가능하다면 [click]을 잃는다.",
+    "date": "2016-04-01"
+  },
+  {
+    "id": "out_of_the_ashes",
+    "en_text": "Make a run.\nWhen your turn begins, if Out of the Ashes is in your heap, you may remove it from the game to make a run.\nLimit 6 per deck.",
+    "ko_text": "런을 수행한다.\n당신의 차례가 시작될 때, 잿더미 밖으로가 당신의 힙에 있다면, 이 카드를 게임에서 제거하고 런을 수행할 수 있다.\n덱당 6장으로 제한된다.",
+    "date": "2016-05-26"
+  },
+  {
+    "id": "singularity",
+    "en_text": "As an additional cost to play this event, spend [click].\nRun a remote server. If successful, instead of breaching that server, trash all cards installed in the root of that server.",
+    "ko_text": "이 이벤트를 플레이하기 위한 추가 비용으로 [click]을 쓴다.\n원격 서버에 런을 수행한다. 성공하면, 카드를 액세스하는 대신, 서버 안에 있는 모든 카드를 비용을 지불하지 않고 폐기한다. (그 카드가 일반적으로는 폐기될 수 없다고 해도 폐기할 수 있다.)",
+    "date": "2014-03-28"
+  },
+  {
+    "id": "tennin_institute_the_secrets_within",
+    "en_text": "When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.",
+    "ko_text": "당신의 차례가 시작될 때, 지난 러너의 차례에 러너가 런을 성공하지 않았다면 당신은 카드 하나에 발전 토큰 1개를 올려 놓을 수 있다.",
+    "date": "2014-05-02"
+  },
+  {
+    "id": "tl_dr",
+    "en_text": "[subroutine] The next time the Runner encounters a piece of ice during this run, that ice gains a second copy of each of its subroutines <em>(after the original subroutine)</em> for the remainder of that encounter.",
+    "ko_text": "[subroutine] 이번 런 동안 러너가 다음 아이스와 대치할 때, 해당 대치 동안 그 아이스는 각각의 서브루틴마다 복사된 서브루틴을 얻는다. (원래 서브루틴 바로 다음에)",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "voter_intimidation",
+    "en_text": "Play only if there is an agenda in the Runner's score area.\nYou and the Runner secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Runner spent a different number of credits, trash 1 resource.",
+    "ko_text": "러너의 점수 영역에 아젠다가 있을 때만 플레이할 수 있다.\n당신과 러너는 비밀리에 0[credit]이나 1[credit], 2[credit]을 쓴다. 쓴 크레딧을 공개한다. 당신이 러너와 다른 금액의 크레딧을 썼다면, 리소스 1개를 폐기한다.",
+    "date": "2016-06-16"
+  },
+  {
+    "id": "street_magic",
+    "en_text": "Unbroken subroutines resolve in the order of your choice.",
+    "ko_text": "깨지지 않은 서브루틴들은 당신이 정한 순서에 따라 발휘된다.",
+    "date": "2016-01-29"
+  },
+  {
+    "id": "hernando_cortez",
+    "en_text": "If the Corp has at least 10[credit], as an additional cost to rez each piece of ice, the Corp must spend credits equal to the number of subroutines on that ice.",
+    "ko_text": "기업이 최소 10[credit]을 가지고 있다면, 기업은 각각의 아이스를 레즈하기 위한 추가 비용으로 레즈되는 아이스의 서브루틴 개수만큼 크레딧을 지불해야 한다.",
+    "date": "2016-07-14"
+  },
+  {
+    "id": "cortex_lock",
+    "en_text": "[subroutine] Do 1 net damage for each unused MU the Runner has.",
+    "ko_text": "[subroutine] 러너가 가진 사용하지 않은 MU당 넷 피해 1점을 입힌다.",
+    "date": "2015-04-03"
+  },
+  {
+    "id": "patch",
+    "en_text": "Install Patch on a rezzed piece of ice as a hosted condition counter with the text \"Host ice has +2 strength.\"",
+    "ko_text": "패치를 \"호스트된 아이스의 힘을 +2한다.\"의 텍스트를 갖는 호스트된 상태 카운터로서 레즈된 아이스 하나에 설치한다.",
+    "date": "2015-01-28"
+  },
+  {
+    "id": "cell_portal",
+    "en_text": "[subroutine] The Runner moves to the outermost position of the attacked server. They may jack out. Derez this ice.",
+    "ko_text": "[subroutine] 러너는 공격하고 있는 서버의 가장 바깥쪽 아이스로 접근한다. 셀 포털을 디레즈한다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "adam_compulsive_hacker",
+    "en_text": "You start the game with 3 different <strong>directive</strong> cards installed (these cards are not considered part of your deck).",
+    "ko_text": "당신은 각기 다른 <strong>강령</strong> 카드 3장을 설치하고 게임을 시작한다.\n(이 카드들은 당신 덱의 일부로 간주하지 않는다.)",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "heimdall_2_0",
+    "en_text": "<strong>Lose [click][click]:</strong> Break up to 2 subroutines on this ice. Only the Runner can use this ability.\n[subroutine] Do 1 core damage.\n[subroutine] Do 1 core damage and end the run.\n[subroutine] End the run.",
+    "ko_text": "러너는 [click][click]을 써서 헤임달 2.0에서 원하는 서브루틴을 2개까지 깰 수 있다.\n[subroutine] 두뇌 피해 1점을 입힌다.\n[subroutine] 두뇌 피해 1점을 입히고 런을 종료한다.\n[subroutine] 런을 종료한다.",
+    "date": "2013-07-29"
+  },
+  {
+    "id": "wraparound",
+    "en_text": "While there are no installed <strong>fracter</strong> programs, this ice gets +7 strength.\n[subroutine] End the run.",
+    "ko_text": "설치된 <strong>프랙터</strong>가 없다면, 는 +7 힘을 갖는다.\n[subroutine] 런을 종료한다.",
+    "date": "2014-02-21"
+  },
+  {
+    "id": "sage",
+    "en_text": "This program gets +1 strength for each unused MU.\nInterface → <strong>2[credit]:</strong> Break 1 <strong>code gate</strong> or 1 <strong>barrier</strong> subroutine.",
+    "ko_text": "현자는 사용하지 않은 각 MU마다 +1 힘을 갖는다.\n2[credit]: 코드게이트 혹은 방벽 서브루틴을 깬다.",
+    "date": "2014-12-18"
+  },
+  {
+    "id": "media_blitz",
+    "en_text": "This card is not trashed until another <strong>current</strong> is played or an agenda is stolen.\nChoose an agenda in the Runner's score area. Media Blitz gains the text of that agenda.",
+    "ko_text": "이 카드는 다른 <strong>동향</strong>이 플레이되거나, 러너가 아젠다를 훔치기 전에는 폐기되지 않는다.\n러너의 점수 영역에 있는 아젠다 하나를 선택한다. 미디어 공세는 그 아젠다의 문구를 얻는다.",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "biotic_labor",
+    "en_text": "Gain [click][click].",
+    "ko_text": "[click][click]을 얻는다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "account_siphon",
+    "en_text": "Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags.",
+    "ko_text": "본부(HQ)로 런을 수행한다. 성공하면, 카드를 액세스하는 대신 기업으로 하여금 최대 5[credit]을 잃게 할 수 있고, 그렇게 하면 기업이 잃은 크레딧 당 2[credit]을 얻고 태그를 2개 가져간다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "experiential_data",
+    "en_text": "All ice protecting this server has +1 strength.",
+    "ko_text": "이 서버를 보호하는 모든 아이스는 힘을 +1 한다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "panchatantra",
+    "en_text": "Once per turn → When you encounter a piece of ice, you may choose 1 subtype that is not <strong>barrier</strong>, <strong>code gate</strong>, or <strong>sentry</strong>. That ice gains the chosen subtype for the remainder of this run.",
+    "ko_text": "차례 중 한 번, 당신이 아이스와 대치할 때, 당신은 이번 런 동안 그 아이스가 <strong>파수</strong>나 <strong>코드 게이트</strong>, <strong>방벽</strong>이 아닌 하위 종류 1개를 얻게 할 수 있다.",
+    "date": "2016-01-29"
+  },
+  {
+    "id": "clot",
+    "en_text": "The Corp cannot score an agenda during the same turn they installed that agenda.\nWhen the Corp purges virus counters, trash this program.",
+    "ko_text": "기업은 아젠다를 설치한 것과 동일한 차례에 아젠다를 득점할 수 없다.\n기업이 바이러스 카운터를 퇴치하면 혈전을 폐기한다.",
+    "date": "2015-04-03"
+  },
+  {
+    "id": "election_day",
+    "en_text": "Trash all cards in HQ (minimum of 1). Draw 5 cards.",
+    "ko_text": "본부(HQ)에 있는 모든 카드를 폐기한다. (적어도 1장 이상). 카드 5장을 뽑는다.",
+    "date": "2016-06-16"
+  },
+  {
+    "id": "d4v1d",
+    "en_text": "Place 3 power counters on D4v1d when it is installed.\n<strong>Hosted power counter:</strong> Break ice subroutine on a piece of ice that has a strength of 5 or greater.",
+    "ko_text": "D3v1d가 설치될 때 파워 카운터 3개를 위에 놓는다.\n<strong>호스트된 파워 카운터</strong>: 힘이 5 이상인 아이스 하나의 서브루틴을 깬다.",
+    "date": "2014-08-15"
+  },
+  {
+    "id": "24_7_news_cycle",
+    "en_text": "As an additional cost to play 24/7 News Cycle, forfeit an agenda.\nResolve the \"when scored\" ability on an agenda in your score area.",
+    "ko_text": "24/7 뉴스 사이클을 플레이하는 추가 비용으로 아젠다 하나를 포기한다.\n당신의 점수 영역에 있는 아젠다 하나에서 \"득점할 때\" 능력을 발휘한다.",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "logos",
+    "en_text": "+1[mu]\nYour maximum hand size is increased by 1.\nWhenever the Corp scores an agenda, you may search your stack for a card and add it to your grip. Shuffle your stack.\nLimit 1 <strong>console</strong> per player.",
+    "ko_text": "+1[mu]\n당신의 최대 핸드 크기를 1만큼 증가시킨다.\n기업이 아젠다를 득점할 때마다, 당신은 당신의 스택에서 카드 하나를 찾아 그립에 더할 수 있다. 당신의 스택을 섞는다.\n<strong>콘솔</strong>은 플레이어당 1장으로 제한된다.",
+    "date": "2014-05-02"
+  },
+  {
+    "id": "back_channels",
+    "en_text": "Choose 1 card in the root of a remote server. Gain 3[credit] for each advancement counter on that card, then trash it.",
+    "ko_text": "한 서버 안에 설치된 카드 한 장을 폐기하고, 그 카드 위에 놓인 발전 토큰당 3[credit]을 얻는다.",
+    "date": "2015-08-06"
+  },
+  {
+    "id": "shock",
+    "en_text": "While the Runner is accessing this asset in R&D, they must reveal it.\nWhen the Runner accesses this asset, do 1 net damage.",
+    "ko_text": "쇼크가 연구개발부(R&D)로부터 액세스되면, 러너는 이를 공개해야만 한다.\n러너가 쇼크!를 액세스할 때, 넷 피해 1점을 준다. (설치돼있지 않아도)",
+    "date": "2014-01-17"
+  },
+  {
+    "id": "dai_v",
+    "en_text": "Interface → <strong>2[credit]:</strong> Break all subroutines. Spend credits only from <strong>stealth</strong> cards to use this ability.\n<strong>1[credit]:</strong> +1 strength.",
+    "ko_text": "2[credit]: 모든 서브루틴을 깬다. 이 능력은 <strong>스텔스</strong> 카드로부터 가져온 크레딧을 지불할 때만 사용한다.\n1[credit]: 힘을 +1 한다.",
+    "date": "2016-07-14"
+  },
+  {
+    "id": "recruiting_trip",
+    "en_text": "Search R&D for up to X different <strong>sysops</strong> (by title), reveal them, and add them to HQ. Shuffle R&D.",
+    "ko_text": "연구개발부(R&D)로부터 서로 다른 <strong>시솝</strong>(카드 명으로 구분한다) X 장을 찾고, 그것을 공개한 다음, 본부(HQ)에 더한다. 연구개발부(R&D)를 섞는다.",
+    "date": "2015-04-24"
+  },
+  {
+    "id": "reclamation_order",
+    "en_text": "As an additional cost to play this operation, spend [click].\nName a card other than Reclamation Order. Reveal any number of copies of the named card from Archives and add them to HQ.",
+    "ko_text": "이 운영을 플레이하기 위한 추가 비용으로 [click]을 쓴다.\n재활용 주문을 제외한 카드 하나의 이름을 말한다. 말한 카드를 기록보관소에서 원하는 만큼 공개하고 본부(HQ)에 더한다.",
+    "date": "2014-03-28"
+  },
+  {
+    "id": "paintbrush",
+    "en_text": "[click]: Choose a rezzed piece of ice. That ice gains <strong>sentry</strong>, <strong>code gate</strong> or <strong>barrier</strong> until the end of the next run this turn.",
+    "ko_text": "[click]: 레즈된 아이스 하나를 선택한다. 그 아이스는 이번 차례의 다음 런이 끝날 때까지 <strong>파수</strong>, <strong>코드 게이트</strong>, <strong>방벽</strong>을 얻는다.",
+    "date": "2014-03-28"
+  },
+  {
+    "id": "sacrificial_construct",
+    "en_text": "[interrupt] → [trash]<strong>:</strong> Prevent a player from trashing 1 installed program or piece of hardware.",
+    "ko_text": "[trash]: 설치된 프로그램이나 하드웨어 하나가 폐기되는 것을 방지한다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "fairchild_1_0",
+    "en_text": "<strong>Lose [click]:</strong> Break 1 subroutine on this ice. Only the Runner can use this ability.\n[subroutine] The Runner must pay 1[credit] or trash 1 of their installed cards.\n[subroutine] The Runner must pay 1[credit] or trash 1 of their installed cards.",
+    "ko_text": "러너는 [click]을 써서 페어차일드 1.0에서 원하는 서브루틴을 깰 수 있다.\n[subroutine] 러너는 1[credit]을 지불해야 한다. 그렇지 않으면 설치된 러너의 카드 1장을 폐기한다.\n[subroutine] 러너는 1[credit]을 지불해야 한다. 그렇지 않으면 설치된 러너의 카드 1장을 폐기한다.",
+    "date": "2016-07-14"
+  },
+  {
+    "id": "chimera",
+    "en_text": "When you rez Chimera, choose <strong>sentry</strong>, <strong>code gate</strong>, or <strong>barrier</strong>. Chimera gains that subtype until derezzed.\nWhen a turn ends, derez Chimera.\n[subroutine] End the run.",
+    "ko_text": "당신이 키메라를 레즈할 때, <strong>파수</strong>, <strong>코드게이트</strong>, <strong>방벽</strong> 중 하나를 선택한다. 키메라는 디레즈되기 전까지 그 서브 타입을 얻는다.\n당신의 차례가 끝날 때, 키메라를 디레즈한다.\n[subroutine] 런을 종료한다.",
+    "date": "2013-02-14"
+  },
+  {
+    "id": "titan_transnational_investing_in_your_future",
+    "en_text": "Whenever you score an agenda, you may place 1 agenda counter on it.",
+    "ko_text": "당신이 아젠다를 득점할 때마다, 당신은 아젠다 카운터 하나를 그 위에 올려놓을 수 있다.",
+    "date": "2015-01-28"
+  },
+  {
+    "id": "hades_fragment",
+    "en_text": "When your turn begins, you may add 1 card from Archives to the bottom of R&D.\nLimit 1 per deck.",
+    "ko_text": "당신의 차례가 시작될 때, 당신은 기록보관소의 카드 1장을 연구개발부(R&D)의 맨 밑에 더할 수 있다.\n덱당 1장으로 제한된다.",
+    "date": "2014-10-16"
+  },
+  {
+    "id": "crypsis",
+    "en_text": "Interface → <strong>1[credit]:</strong> Break 1 subroutine.\n<strong>1[credit]:</strong> +1 strength.\n<strong>[click]:</strong> Place 1 virus counter on this program.\nWhenever an encounter ends, if you used this program to break a subroutine during that encounter, remove 1 hosted virus counter or trash this program.",
+    "ko_text": "1[credit]: 아이스의 서브루틴을 깬다.\n1[credit]: 힘을 +1 한다.\n[click]: 크립시스에 바이러스 카운터 1개를 놓는다.\n당신이 크립시스를 사용하여 서브루틴을 깬 아이스와 대치를 마칠 때, 호스트된 바이러스 카운터 1개를 제거하거나 크립시스를 폐기한다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "the_noble_path",
+    "en_text": "Trash all cards from your grip. Run any server. Whenever you would take damage during that run, prevent all of that damage.",
+    "ko_text": "당신의 그립을 폐기한다. 런을 수행한다. 이번 런 동안 모든 피해를 방지한다.",
+    "date": "2016-05-26"
+  },
+  {
+    "id": "heartbeat",
+    "en_text": "+1[mu]\n[interrupt] → <strong>Trash 1 of your installed cards:</strong> Prevent 1 damage.\nLimit 1 <strong>console</strong> per player.",
+    "ko_text": "+1[mu]\n<strong>설치된 카드 1장 폐기</strong>: 피해 1점을 방지한다.\n<strong>콘솔</strong>은 플레이어당 1개로 제한된다.",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "vulcan_coverup",
+    "en_text": "When you score this agenda, do 2 meat damage.\nWhen the Runner steals this agenda, take 1 bad publicity.",
+    "ko_text": "당신이 불카누스 은폐 공작을 득점할 때, 육체 피해 2점을 입힌다.\n러너가 불카누스 은폐 공작을 훔칠 때, 악평 1개를 갖는다.",
+    "date": "2014-02-21"
+  },
+  {
+    "id": "hostage",
+    "en_text": "As an additional cost to play this event, spend [click].\nSearch your stack for a <strong>connection</strong>, reveal it, and add it to your grip. You may install that <strong>connection</strong> (paying its install cost). Shuffle your stack.",
+    "ko_text": "이 이벤트를 플레이하기 위한 추가 비용으로 [click]을 쓴다.\n스택에서 <strong>연결</strong> 하나를 찾고, 그것을 공개한 다음, 당신의 그립에 더한다. 당신은 이 <strong>연결</strong>을 설치할 수 있다(설치 비용을 지불한다). 당신의 스택을 섞는다.",
+    "date": "2013-09-27"
+  },
+  {
+    "id": "diesel",
+    "en_text": "Draw 3 cards.",
+    "ko_text": "카드 3장을 뽑는다.",
+    "date": "2012-09-06"
+  },
+  {
+    "id": "spooned",
+    "en_text": "Run any server. The first time you fully break a <strong>code gate</strong> during that run, trash that <strong>code gate</strong>.",
+    "ko_text": "런을 수행한다. 당신이 이번 런에 처음으로  <strong>코드 게이트</strong>의 모든 서브루틴을 깨면, 그 <strong>코드 게이트</strong>를 폐기한다.",
+    "date": "2015-01-28"
+  },
+  {
+    "id": "unscheduled_maintenance",
+    "en_text": "This card is not trashed until another <strong>current</strong> is played or an agenda is scored.\nThe Corp cannot install more than 1 piece of ice each turn.",
+    "ko_text": "이 카드는 다른 <strong>동향</strong>이 플레이되거나, 기업이 아젠다를 득점하기 전에는 폐기되지 않는다.\n매 차례마다 기업은 1장을 초과하여 아이스를 설치할 수 없다.",
+    "date": "2014-08-15"
+  },
+  {
+    "id": "market_research",
+    "en_text": "If the Runner is tagged when you score Market Research, place 1 agenda counter on it.\nMarket Research is worth 1 additional agenda point while it has an agenda counter on it.",
+    "ko_text": "당신이 시장 조사를 득점할 때 러너가 태그된 상태라면, 이 위에 아젠다 카운터 1개를 놓는다.\n시장 조사는 위에 아젠다 카운터가 놓여있다면 1점의 추가 아젠다 점수를 갖는다.",
+    "date": "2014-02-21"
+  },
+  {
+    "id": "next_bronze",
+    "en_text": "NEXT Bronze has +1 strength for each rezzed piece of <strong>NEXT</strong> ice.\n[subroutine] End the run.",
+    "ko_text": "NEXT 브론즈 는 레즈된 각각의 <strong>NEXT</strong> 아이스마다 +1 힘을 가진다.\n[subroutine] 런을 종료한다.",
+    "date": "2013-09-27"
+  },
+  {
+    "id": "passport",
+    "en_text": "Interface → <strong>1[credit]:</strong> Break 1 <strong>code gate</strong> subroutine.\n<strong>2[credit]:</strong> +2 strength.\nThis program cannot interface with ice protecting a remote server.",
+    "ko_text": "1[credit]: <strong>코드 게이트</strong> 서브루틴을 깬다.\n2[credit]: 힘을 +2 한다.\n여권은 원격서버를 보호하는 아이스에 사용할 수 없다.",
+    "date": "2014-05-02"
+  },
+  {
+    "id": "bazaar",
+    "en_text": "Whenever you install a piece of hardware from your grip, you may install another copy of that hardware from your grip (paying all costs).",
+    "ko_text": "당신이 그립으로부터 하드웨어를 설치할 때마다, 당신은 그립으로부터 그것과 똑같은 하드웨어를 설치할 수 있다. (모든 비용은 지불해야 한다.)",
+    "date": "2016-04-28"
+  },
+  {
+    "id": "prey",
+    "en_text": "Make a run. Once during this run, when you pass a piece of ice, you may trash a number of your installed cards equal to the strength of that ice. If you do, trash that ice.",
+    "ko_text": "런을 수행한다. 이번 런 동안 한 번, 당신이 아이스 하나를 통과할 때, 당신은 그 아이스의 힘만큼 설치된 당신의 카드를 폐기할 수 있다. 그렇게 하면, 그 아이스를 폐기한다.",
+    "date": "2015-10-29"
+  },
+  {
+    "id": "zealous_judge",
+    "en_text": "Zealous Judge can only be rezzed if the Runner is tagged.\n[click], 1[credit]: Give the Runner 1 tag.",
+    "ko_text": "열정적인 판사는 러너가 태그됐을 때만 레즈할 수 있다.\n[click], 1[credit]: 러너에게 태그 1개를 준다.",
+    "date": "2016-06-16"
+  },
+  {
+    "id": "clones_are_not_people",
+    "en_text": "This card is not trashed until another <strong>current</strong> is played or an agenda is stolen.\nWhen you score an agenda, add \"Clones are not People\" to your score area as an agenda worth 1 agenda point.",
+    "ko_text": "이 카드는 다른 <strong>동향</strong>이 플레이되거나, 러너가 아젠다를 훔치기 전에는 폐기되지 않는다.\n당신이 아젠다를 득점할 때, \"클론은 인간이 아니다\"를 당신의 점수 영역에 아젠다 점수 1점인 아젠다로써 더한다.",
+    "date": "2016-04-01"
+  }
+]

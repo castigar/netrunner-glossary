@@ -1,0 +1,8 @@
+[project]
+name = "netrunner-translation-agent"
+version = "0.1.0"
+description = "Android: Netrunner EN→KO translation assistant agent"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1447,3 +1447,200 @@ def test_next_card_injected_terms_does_not_include_approved_new_term(small_tm_in
         "card_2's injected_terms must NOT include 'rez' — "
         "approval does not auto-add terms to the glossary injection list"
     )
+
+
+def test_approved_record_stores_field_and_route(small_tm_index, small_glossary, tmp_path):
+    """ApprovedRecord unit is (card_id, field) pair with route recorded.
+
+    AC5: 적재 단위는 (카드 id, 필드) 쌍이며 route를 함께 기록한다.
+    For a rule-route card: field='text' (the card JSON field name), route='rule'.
+    For a flavor-route card: field='flavor', route='flavor'.
+
+    This test cannot be trivially satisfied by field='' / route='' defaults.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+    from approved_store import load_approved
+
+    flat, llm_judged = small_glossary
+    store_path = tmp_path / "approved.jsonl"
+
+    # --- Rule-route card (en_rule present) ---
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=llm_judged,
+        llm=_MockLLM("10 크레딧을 얻는다."),  # fidelity violation → interrupt
+        conflict_entries=[],
+        checkpointer=MemorySaver(),
+        approved_store_path=store_path,
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
+    )
+    config = {"configurable": {"thread_id": "ac5_field_route_rule"}}
+    graph.invoke({"card_id": "sure_gamble", "en_rule": "Gain 9 credits."}, config=config)
+    graph.invoke(Command(resume="approved"), config=config)
+
+    records = load_approved(store_path)
+    assert len(records) == 1
+    assert records[0].field == "text", (
+        f"Rule-route card must have field='text' (card JSON field name), got {records[0].field!r}"
+    )
+    assert records[0].route == "rule", (
+        f"Rule-route card must have route='rule', got {records[0].route!r}"
+    )
+
+    # --- Flavor-route card (en_flavor only) ---
+    store_path2 = tmp_path / "approved2.jsonl"
+    graph2 = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=llm_judged,
+        llm=_MockLLM("10 크레딧을 얻는다."),  # fidelity violation → interrupt (10 vs 9)
+        conflict_entries=[],
+        checkpointer=MemorySaver(),
+        approved_store_path=store_path2,
+        new_term_candidates_path=tmp_path / "new_term_candidates2.json",
+    )
+    config2 = {"configurable": {"thread_id": "ac5_field_route_flavor"}}
+    # en_flavor: "Gain 9 credits." triggers fidelity guard (draft says 10)
+    graph2.invoke({"card_id": "flavor_card", "en_rule": "", "en_flavor": "Gain 9 credits."}, config=config2)
+    result2 = graph2.invoke(Command(resume="approved"), config=config2)
+
+    records2 = load_approved(store_path2)
+    assert len(records2) == 1
+    assert records2[0].field == "flavor", (
+        f"Flavor-route card must have field='flavor', got {records2[0].field!r}"
+    )
+    assert records2[0].route == "flavor", (
+        f"Flavor-route card must have route='flavor', got {records2[0].route!r}"
+    )
+
+
+def test_state_new_terms_field_contains_en_ko_rendering_pairs(small_tm_index, tmp_path):
+    """After approving a card with new term violations, state['new_terms'] has (en, ko_rendering) pairs.
+
+    AC5: DraftRecord에 이 쌍을 담는 new_terms 필드를 두고.
+    new_term_identity = (EN_term_not_in_glossary, ko_rendering_used_in_draft).
+
+    This test fails if _review_queue never populates new_terms, or uses the wrong key names.
+    """
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+
+    # Empty glossary → all content words are new terms.
+    flat: GlossaryFlat = {}
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=True,
+        llm=_MockLLM("프로그램을 설치한다."),
+        conflict_entries=[],
+        checkpointer=MemorySaver(),
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
+    )
+    config = {"configurable": {"thread_id": "ac5_newterms_state"}}
+
+    result1 = graph.invoke({"card_id": "card_new_term", "en_rule": "Install a program."}, config=config)
+    assert "__interrupt__" in result1, (
+        "Expected interrupt for new term: empty glossary flags all content words"
+    )
+
+    result2 = graph.invoke(Command(resume="approved"), config=config)
+
+    new_terms = result2.get("new_terms")
+    assert new_terms is not None, "state['new_terms'] must be present after approving a new-term card"
+    assert isinstance(new_terms, list)
+    assert len(new_terms) > 0, (
+        "state['new_terms'] must be non-empty: the draft has EN terms not in the glossary"
+    )
+    for pair in new_terms:
+        assert "en" in pair, f"new_term_identity pair must have 'en' key: {pair}"
+        assert "ko_rendering" in pair, f"new_term_identity pair must have 'ko_rendering' key: {pair}"
+    en_set = {p["en"].lower() for p in new_terms}
+    assert "install" in en_set or "program" in en_set, (
+        f"Expected 'install' or 'program' in new_terms (empty glossary, source='Install a program.'): {en_set}"
+    )
+
+
+def test_glossary_file_hash_and_injected_terms_unchanged_after_new_term_approval(
+    small_tm_index, tmp_path
+):
+    """Combined proof: after approving a card with a new-term trigger, BOTH:
+      (a) glossary.json file is bit-for-bit unchanged, AND
+      (b) the same term does NOT appear in the next card's injected_terms.
+
+    AC5: 승인만으로 glossary.json은 갱신되지 않으며 다음 카드부터 강제되지도 않는다.
+    This is the definitive combined test the AC requires:
+      '승인 직후 같은 용어를 포함한 카드를 처리해 glossary.json의 해시가 불변이고
+       주입 용어 목록에도 추가되지 않았음을 단언하는 테스트로 증명한다.'
+
+    This test is NOT a tautology — it fails if:
+      - graph modifies glossary.json (file hash changes), OR
+      - graph adds the new term to the in-memory glossary (injected_terms includes it).
+    Removing the glossary isolation in review_queue would make it fail.
+    """
+    import hashlib
+    import json as _json
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+    from glossary_guard import load_flat_glossary
+
+    # Create a real glossary.json file containing "run" but NOT "rez".
+    glossary_data = {
+        "llm_judged": True,
+        "official": {"run": "런"},
+        "subtype_extracted": {},
+        "extracted": {},
+    }
+    glossary_path = tmp_path / "glossary.json"
+    glossary_path.write_text(
+        _json.dumps(glossary_data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # Capture file hash BEFORE any pipeline run.
+    hash_before = hashlib.sha256(glossary_path.read_bytes()).hexdigest()
+
+    flat, llm_judged = load_flat_glossary(glossary_path)
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=llm_judged,
+        llm=_MockLLM("레즈한다."),
+        conflict_entries=[],
+        checkpointer=MemorySaver(),
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
+    )
+
+    # Card 1: "rez" is a new term not in the glossary.
+    # "Rez this." → "rez" is a new EN term; the draft says "레즈한다."
+    config1 = {"configurable": {"thread_id": "combined_hash_c1"}}
+    result1 = graph.invoke({"card_id": "card_1", "en_rule": "Rez this."}, config=config1)
+    if "__interrupt__" in result1:
+        # Approve to exercise the full approval path.
+        graph.invoke(Command(resume="approved"), config=config1)
+
+    # (a) File hash must be unchanged after processing and approving card 1.
+    hash_after_c1 = hashlib.sha256(glossary_path.read_bytes()).hexdigest()
+    assert hash_before == hash_after_c1, (
+        "glossary.json must be bit-for-bit unchanged after approving a card with a new term — "
+        "approval writes only to approved.jsonl and new_term_candidates.json, never to glossary.json"
+    )
+
+    # Card 2: same new term, different thread (independent state).
+    config2 = {"configurable": {"thread_id": "combined_hash_c2"}}
+    result2 = graph.invoke({"card_id": "card_2", "en_rule": "Rez that."}, config=config2)
+
+    # (a) File hash must STILL be unchanged after processing card 2.
+    hash_final = hashlib.sha256(glossary_path.read_bytes()).hexdigest()
+    assert hash_before == hash_final, (
+        "glossary.json must remain unchanged after processing another card with the same new term"
+    )
+
+    # (b) "rez" must NOT appear in card_2's injected_terms — it was never added to the glossary.
+    injected_en = {t["en"].lower() for t in result2.get("injected_terms", [])}
+    assert "rez" not in injected_en, (
+        "After approving card_1 with new term 'rez', card_2's injected_terms must NOT include 'rez' — "
+        "glossary auto-update from approval is prohibited (phase-3 confirmation required)"
+    )

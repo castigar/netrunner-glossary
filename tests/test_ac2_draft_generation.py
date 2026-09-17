@@ -353,3 +353,60 @@ def test_pipeline_output_file_has_glossary_llm_judged(tmp_path):
         assert "glossary_llm_judged" in rec, (
             f"Serialized DraftRecord missing glossary_llm_judged: {line[:120]}"
         )
+
+
+def test_state_to_draft_record_tm_hits_include_ko_text():
+    """tm_hits in serialized DraftRecord must include ko_text (ontology: id·en_text·ko_text·score).
+
+    Removing ko_text from slim_hits breaks the echo gate — it cannot compare
+    draft_ko to tm_hits[0].ko_text from pipeline_output.jsonl alone.
+    """
+    from run_pipeline import _state_to_draft_record
+
+    state = {
+        "card_id": "test",
+        "text_type": "rule",
+        "draft_ko": "번역",
+        "tm_hits": [
+            {"id": "ice_wall", "en_text": "End the run.", "ko_text": "런을 종료한다.", "score": 0.04,
+             "bm25_rank": 0, "char_rank": 1, "dense_rank": None},
+        ],
+        "injected_terms": [],
+        "tm_confidence": 0.04,
+        "glossary_llm_judged": True,
+    }
+    rec = _state_to_draft_record(state)
+    assert rec["tm_hits"], "tm_hits must be non-empty"
+    hit = rec["tm_hits"][0]
+    assert "ko_text" in hit, f"ko_text missing from serialized tm_hits[0]: {hit}"
+    assert hit["ko_text"] == "런을 종료한다.", f"ko_text value wrong: {hit['ko_text']!r}"
+    # Internal rank fields must be stripped from the output
+    assert "bm25_rank" not in hit
+    assert "char_rank" not in hit
+    assert "dense_rank" not in hit
+
+
+def test_pipeline_output_file_tm_hits_include_ko_text(tmp_path):
+    """Serialized pipeline output must have ko_text in each tm_hits entry (Seed: echo gate)."""
+    import json
+    from run_pipeline import run_pipeline
+
+    out = tmp_path / "ac2_ko_text_check.jsonl"
+    run_pipeline(
+        data_dir=DATA_DIR,
+        assets_dir=ASSETS_DIR,
+        n_cards=1,
+        output_path=out,
+    )
+    lines = out.read_text(encoding="utf-8").splitlines()
+    records_checked = 0
+    for line in lines:
+        rec = json.loads(line)
+        if "_meta" in rec:
+            continue
+        for hit in rec.get("tm_hits", []):
+            assert "ko_text" in hit, (
+                f"tm_hits entry missing ko_text in card {rec.get('card_id')}: {hit}"
+            )
+        records_checked += 1
+    assert records_checked > 0, "No DraftRecords found in output file"

@@ -159,7 +159,7 @@ def test_pipeline_output_written_to_disk(tmp_path):
 
 
 def test_state_to_draft_record_slims_tm_hits():
-    """_state_to_draft_record keeps only {id, en_text, score} in tm_hits."""
+    """_state_to_draft_record keeps {id, en_text, ko_text, score} in tm_hits; strips internal rank fields."""
     state = {
         "card_id": "x",
         "text_type": "rule",
@@ -174,7 +174,7 @@ def test_state_to_draft_record_slims_tm_hits():
         "tm_confidence": 0.04,
     }
     rec = _state_to_draft_record(state)
-    assert rec["tm_hits"] == [{"id": "a", "en_text": "Gain 9.", "score": 0.04}]
+    assert rec["tm_hits"] == [{"id": "a", "en_text": "Gain 9.", "ko_text": "9 얻.", "score": 0.04}]
     assert rec["route"] == "rule"
     assert rec["card_id"] == "x"
 

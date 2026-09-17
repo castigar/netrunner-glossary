@@ -181,7 +181,7 @@ def _state_to_draft_record(state: CardState) -> dict:
     carries the actual ko_rendering supplied by the reviewer.
     """
     slim_hits = [
-        {"id": h["id"], "en_text": h["en_text"], "score": h["score"]}
+        {"id": h["id"], "en_text": h["en_text"], "ko_text": h.get("ko_text", ""), "score": h["score"]}
         for h in state.get("tm_hits", [])
     ]
 

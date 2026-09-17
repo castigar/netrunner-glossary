@@ -48,6 +48,7 @@ import gate2_symbol_preservation
 import gate3_edit_distance
 import gate_verdict as gate_verdict_mod
 import obs_llm_judge
+from field_card_synthesis import FieldSynthesisReport, synthesize_field_to_card
 from gate_verdict import GateVerdict, format_verdict
 from obs_llm_judge import (
     FlavorNaturalnessJudgment,
@@ -71,6 +72,9 @@ class EvaluationReport:
         empty_prediction_count: Predictions that were "" (TM search found no hit).
         tm_baseline_median:     TM-only baseline median edit distance (measured in run).
         gate3_derived_threshold: TM baseline × 0.7 — derived Gate 3 threshold.
+        field_synthesis:        AC7 field-to-card synthesis report. Populated when
+                                loading from pipeline_output.jsonl (not for TM-only
+                                or flat-prediction modes).
     """
 
     verdict: GateVerdict
@@ -80,6 +84,7 @@ class EvaluationReport:
     empty_prediction_count: int = 0
     tm_baseline_median: Optional[float] = None
     gate3_derived_threshold: Optional[float] = None
+    field_synthesis: Optional[FieldSynthesisReport] = None
 
 
 def _tm_predictions(
@@ -129,23 +134,32 @@ def _compute_tm_baseline_median(
 
 def _load_pipeline_output(
     pipeline_output_path: Path, hold_out_path: Path
-) -> tuple[list[str], int, int, float]:
+) -> tuple[list[str], int, int, float, FieldSynthesisReport]:
     """Load draft_ko predictions from a pipeline_output.jsonl file.
 
+    AC7: Uses field-to-card synthesis to handle (card_id, field) pairs correctly.
+    A card with both text and flavor fields produces two records; any empty field
+    makes the card's gate-scoring prediction "" (card violated).
+
     Returns:
-        (predictions, pending_count, empty_count, pending_ratio)
+        (predictions, pending_count, empty_count, pending_ratio, field_synthesis)
+
+        predictions:      Card-level gate predictions aligned with hold_out.json order.
+                          Derived from synthesize_field_to_card (AC7 synthesis rule).
+        pending_count:    Cards where at least one field record has interrupted=True.
+        empty_count:      Total number of empty field predictions (across all fields).
+        pending_ratio:    pending_count / total hold-out cards.
+        field_synthesis:  AC7 FieldSynthesisReport (card-level compliance breakdown).
 
     pipeline_output.jsonl schema (one JSON object per line):
         {card_id, route, draft_ko, tm_hits, injected_terms, tm_confidence, interrupted}
-
-    Cards are matched by order to hold_out.json.  If the pipeline output has
-    fewer records than hold-out cards, the remainder are treated as empty predictions.
     """
     hold_out: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
-    hold_out_ids = [c.get("id", "") for c in hold_out]
 
-    # Parse pipeline output — skip AC4 metadata header lines (have "_meta" key).
-    records: list[dict] = []
+    # Parse ALL field records — skip AC4 metadata header lines (have "_meta" key).
+    # Unlike the previous implementation, we keep ALL records (not just last per card_id)
+    # because a card can have both text and flavor field records.
+    field_records: list[dict] = []
     with pipeline_output_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -154,30 +168,29 @@ def _load_pipeline_output(
             obj = json.loads(line)
             if "_meta" in obj:
                 continue  # skip header (AC4 threshold derivation record)
-            records.append(obj)
+            field_records.append(obj)
 
-    # Build an id→record index for alignment
-    record_by_id: dict[str, dict] = {r.get("card_id", ""): r for r in records}
+    # AC7: synthesize field-level records into card-level judgments.
+    synthesis = synthesize_field_to_card(field_records, hold_out)
 
-    preds: list[str] = []
-    pending_count = 0
-    empty_count = 0
-    for card_id in hold_out_ids:
-        rec = record_by_id.get(card_id)
-        if rec is None:
-            preds.append("")
-            empty_count += 1
-        else:
-            draft_ko = rec.get("draft_ko", "")
-            preds.append(draft_ko)
-            if not draft_ko:
-                empty_count += 1
-            if rec.get("interrupted", False):
-                pending_count += 1
+    # Count pending cards (at least one field record interrupted=True).
+    interrupted_cards: set[str] = {
+        r.get("card_id", "")
+        for r in field_records
+        if r.get("interrupted", False)
+    }
+    pending_count = sum(
+        1 for r in synthesis.card_results
+        if r.card_id in interrupted_cards
+    )
 
-    total = len(hold_out_ids)
+    # empty_count = total number of field-level empty predictions (all causes combined).
+    empty_count = sum(synthesis.empty_by_cause.values())
+
+    total = synthesis.total_count
     pending_ratio = pending_count / total if total > 0 else 0.0
-    return preds, pending_count, empty_count, pending_ratio
+
+    return synthesis.card_predictions, pending_count, empty_count, pending_ratio, synthesis
 
 
 def run_evaluation(
@@ -193,6 +206,7 @@ def run_evaluation(
     pending_ratio: float = 0.0,
     empty_prediction_count: int = 0,
     tm_baseline_median: Optional[float] = None,
+    field_synthesis: Optional[FieldSynthesisReport] = None,
 ) -> EvaluationReport:
     """Evaluate pipeline predictions through hard gates and observation metrics.
 
@@ -206,10 +220,18 @@ def run_evaluation(
     Gate 1 and 2 score the provided predictions (not card['ko_text']).
     Gate 3 scores the provided predictions against the hold-out reference.
 
+    AC7: When field_synthesis is provided (loaded from pipeline_output.jsonl),
+    the report includes card-level compliance breakdown and empty-prediction
+    counts by cause (tm_search_failure / guard_rejected_in_review_queue /
+    approval_incomplete).  The gate-scoring predictions are the synthesized
+    card-level predictions from FieldSynthesisReport.card_predictions.
+
     Args:
         hold_out_path:          Path to data/hold_out.json.
         glossary_path:          Path to assets/glossary.json.
         predictions:            Draft KO translations, one per hold-out card in order.
+                                When loading from pipeline_output.jsonl, these are the
+                                synthesized card-level predictions (AC7).
         skip_llm_judge:         When True, obs metrics are skipped and report.obs is None.
         rule_judgments:         Pre-computed rule judgments (bypasses Bedrock call).
                                 Must be paired with flavor_judgments.
@@ -217,9 +239,11 @@ def run_evaluation(
         obs_llm:                Optional pre-built Bedrock LLM for obs scoring.
         pending_count:          Count of cards pending HITL approval (pre-scored).
         pending_ratio:          pending_count / total_cards.
-        empty_prediction_count: Count of empty-string predictions (TM no-hit or missing).
+        empty_prediction_count: Count of empty-string field predictions (all causes).
         tm_baseline_median:     Pre-measured TM-only baseline median (skips re-measurement
                                 when already computed by the caller).
+        field_synthesis:        AC7 FieldSynthesisReport from synthesize_field_to_card.
+                                None when using flat predictions (TM-only or file mode).
 
     Returns:
         :class:`EvaluationReport` with verdict and optional obs metrics.
@@ -257,6 +281,7 @@ def run_evaluation(
         empty_prediction_count=empty_prediction_count,
         tm_baseline_median=tm_baseline_median,
         gate3_derived_threshold=gate3_derived_threshold,
+        field_synthesis=field_synthesis,
     )
 
 
@@ -318,9 +343,32 @@ def print_evaluation_report(report: EvaluationReport) -> None:
     )
     if report.empty_prediction_count > 0:
         print(
-            f"  빈 예측 (TM 검색 결과 없음): {report.empty_prediction_count}건"
+            f"  빈 예측 (필드 레벨): {report.empty_prediction_count}건"
             " — 정답 ko_text 대체 없음 (reference_leakage_ban)"
         )
+
+    # AC7: Field-to-card synthesis breakdown
+    if report.field_synthesis is not None:
+        fs = report.field_synthesis
+        print()
+        print("=== 필드→카드 합성 (AC7) ===")
+        print(
+            f"  카드 준수: {fs.compliant_count}건 / {fs.total_count}건"
+            f"  ({fs.compliant_count / fs.total_count:.1%})" if fs.total_count > 0
+            else f"  카드 준수: {fs.compliant_count}건 / {fs.total_count}건"
+        )
+        print(f"  카드 위반: {fs.violated_count}건 (필드 1개 이상 빈 예측)")
+        if sum(fs.empty_by_cause.values()) > 0:
+            print("  빈 예측 원인별 집계 (필드 단위):")
+            cause_labels = {
+                "tm_search_failure": "TM 검색 실패",
+                "guard_rejected_in_review_queue": "검토 큐 잔류",
+                "approval_incomplete": "승인 미완",
+            }
+            for cause, count in fs.empty_by_cause.items():
+                if count > 0:
+                    label = cause_labels.get(cause, cause)
+                    print(f"    {label}: {count}건")
 
     if report.obs is not None:
         print()
@@ -378,13 +426,14 @@ def main() -> None:
     pending_ratio = 0.0
     empty_prediction_count = 0
     tm_baseline_median: Optional[float] = None
+    field_synthesis: Optional[FieldSynthesisReport] = None
 
     if args.pipeline_output and args.predictions_file:
         parser.error("--pipeline-output and --predictions-file are mutually exclusive.")
 
     if args.pipeline_output:
         pipeline_output_path = Path(args.pipeline_output)
-        predictions, pending_count, empty_prediction_count, pending_ratio = (
+        predictions, pending_count, empty_prediction_count, pending_ratio, field_synthesis = (
             _load_pipeline_output(pipeline_output_path, hold_out_path)
         )
         print(
@@ -431,6 +480,7 @@ def main() -> None:
         pending_ratio=pending_ratio,
         empty_prediction_count=empty_prediction_count,
         tm_baseline_median=tm_baseline_median,
+        field_synthesis=field_synthesis,
     )
     print_evaluation_report(report)
 

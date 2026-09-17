@@ -901,6 +901,54 @@ def test_full_graph_failed_guard_card_not_in_approved_store(
     assert not store_path.exists() or load_approved(store_path) == []
 
 
+def test_review_queue_record_preserves_guard_violations_and_not_in_approved_store(
+    small_tm_index, small_glossary, tmp_path
+):
+    """AC3: Deliberately violated draft → review queue record WITH violation details + NOT in approved store.
+
+    Simultaneously asserts both:
+    1. guard_violations is non-empty; each entry carries 'guard' (which guard fired) and
+       'detail' or 'matches' (WHY it fired) — the review queue record preserves the reason.
+    2. approved.jsonl is NOT written — failed items do not bypass to the approved store.
+    """
+    from approved_store import load_approved
+    flat, llm_judged = small_glossary
+    store_path = tmp_path / "approved.jsonl"
+    # Deliberately wrong number (10 vs EN 9) triggers fidelity guard violation.
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=llm_judged,
+        llm=_MockLLM("10 크레딧을 얻는다."),  # fidelity violation: 10 ≠ 9
+        conflict_entries=[],
+        approved_store_path=store_path,
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
+    )
+    result = graph.invoke({"card_id": "sure_gamble", "en_rule": "Gain 9 credits."})
+
+    # Assertion 1 — review queue record preserves which guard failed and WHY.
+    # guard_violations in state is the review queue record for the failing card.
+    violations = result.get("guard_violations", [])
+    assert len(violations) > 0, (
+        "Deliberately violated draft must produce non-empty guard_violations"
+    )
+    for v in violations:
+        assert "guard" in v, (
+            f"Each violation must name the failing guard ('guard' key missing): {v}"
+        )
+        has_why = "detail" in v or "matches" in v
+        assert has_why, (
+            f"Violation for guard={v.get('guard')!r} must carry structured reason "
+            f"('detail' or 'matches' key missing): {v}"
+        )
+
+    # Assertion 2 — failed item NOT in approved store.
+    assert result.get("needs_review") is True, "Violated draft must set needs_review=True"
+    assert load_approved(store_path) == [], (
+        "Failed guard item must NOT be written to approved.jsonl without human approval"
+    )
+
+
 def test_full_graph_stub_mode_no_guard_block():
     """Stub mode (no flat_glossary): guard validation is a no-op, cards are not blocked."""
     graph = build_translation_graph()  # no deps

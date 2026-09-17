@@ -19,6 +19,14 @@ class ApprovedRecord(BaseModel):
     """One approved (or modified-then-approved) translation record."""
 
     card_id: str
+    field: str = Field(
+        default="",
+        description="Source field: 'text' for rule text, 'flavor' for flavor text",
+    )
+    route: str = Field(
+        default="",
+        description="Translation route: 'rule' or 'flavor'",
+    )
     en_text: str
     ko_draft: str  # original draft before human modification; may equal approved_ko
     approved_ko: str  # the final approved Korean translation
@@ -92,7 +100,15 @@ class NewTermCandidateRecord(BaseModel):
     """
 
     en_term: str = Field(description="Unregistered EN term found in the approved translation")
+    ko_rendering: str = Field(
+        default="",
+        description="KO rendering used for this term in the approved translation (new_term_identity.ko_rendering)",
+    )
     source_card_id: str = Field(description="Card ID of the approved translation that contained this term")
+    source_field: str = Field(
+        default="",
+        description="Source field: 'text' for rule text, 'flavor' for flavor text",
+    )
     approved_ko_context: str = Field(description="The approved KO text providing context for this term")
     submitted_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()

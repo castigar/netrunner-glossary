@@ -194,6 +194,48 @@ def test_state_to_draft_record_zero_confidence_when_no_tm_hits():
     assert rec["tm_hits"] == []
 
 
+def test_state_to_draft_record_preserves_guard_violations_when_interrupted():
+    """AC3: _state_to_draft_record must include guard_violations when the card was interrupted.
+
+    This fixes the known defect: previously only 'interrupted: true' was recorded,
+    losing information about WHICH guard failed and WHY.
+    """
+    state = {
+        "card_id": "z",
+        "text_type": "rule",
+        "draft_ko": "10 크레딧을 얻는다.",
+        "tm_hits": [],
+        "injected_terms": [],
+        "tm_confidence": 0.04,
+        "guard_violations": [
+            {"guard": "rule_violation", "detail": {"fidelity_violations": [{"kind": "added_number", "detail": "10: 2× in KO but 1× in EN"}], "glossary_violations": []}},
+        ],
+    }
+    rec = _state_to_draft_record(state)
+    assert "guard_violations" in rec, (
+        "_state_to_draft_record must include guard_violations when non-empty"
+    )
+    assert len(rec["guard_violations"]) == 1
+    assert rec["guard_violations"][0]["guard"] == "rule_violation"
+    assert "detail" in rec["guard_violations"][0]
+
+
+def test_state_to_draft_record_no_guard_violations_key_when_empty():
+    """When guard_violations is empty (clean card), the key must be absent from the record."""
+    state = {
+        "card_id": "clean",
+        "text_type": "rule",
+        "draft_ko": "9 크레딧을 얻는다.",
+        "tm_hits": [],
+        "injected_terms": [],
+        "tm_confidence": 0.04,
+        "guard_violations": [],
+    }
+    rec = _state_to_draft_record(state)
+    # Empty violations — key should not be in the record (avoids clutter for clean cards)
+    assert "guard_violations" not in rec
+
+
 # ---------------------------------------------------------------------------
 # Stub LLM tests
 # ---------------------------------------------------------------------------

@@ -169,12 +169,16 @@ def _state_to_draft_record(state: CardState) -> dict:
 
     Strips extra TM search fields (bm25_rank, char_rank, dense_rank) that are
     internal to the index but not part of the output contract.
+
+    AC3: When the card was routed to the review queue (guard_violations non-empty),
+    the violation details are preserved in the output record so the caller can see
+    which guard failed and why — not just that the card was interrupted.
     """
     slim_hits = [
         {"id": h["id"], "en_text": h["en_text"], "score": h["score"]}
         for h in state.get("tm_hits", [])
     ]
-    return {
+    record: dict = {
         "card_id": state.get("card_id", ""),
         "route": state.get("text_type", "rule"),
         "draft_ko": state.get("draft_ko", ""),
@@ -183,6 +187,12 @@ def _state_to_draft_record(state: CardState) -> dict:
         "tm_confidence": state.get("tm_confidence", 0.0),
         "glossary_llm_judged": state.get("glossary_llm_judged", False),
     }
+    # AC3: preserve guard violation details (which guard, why) in interrupted records.
+    # guard_violations is set by validate_draft and carries {guard, detail|matches} per entry.
+    guard_violations = state.get("guard_violations")
+    if guard_violations:
+        record["guard_violations"] = guard_violations
+    return record
 
 
 # ---------------------------------------------------------------------------

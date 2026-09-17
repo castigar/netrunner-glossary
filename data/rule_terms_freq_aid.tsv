@@ -1,0 +1,501 @@
+df	in_cap	en_term	example_card
+305	yes	[credit]	account_siphon
+265	yes	runner	aggressive_secretary
+262	yes	run	account_siphon
+221	yes	card	aggressive_negotiation
+218	yes	turn	adonis_campaign
+207	yes	ice	accelerated_beta_test
+194	yes	[click]	armitage_codebusting
+174	yes	trash	accelerated_beta_test
+157	yes	[subroutine]	archer
+141	yes	cost	akitaro_watanabe
+139	yes	cards	accelerated_beta_test
+138	yes	successful	account_siphon
+136	yes	agenda	aggressive_negotiation
+135	yes	piece	chum
+133	yes	gain	account_siphon
+131	yes	install	accelerated_beta_test
+119	yes	installed	aesops_pawnshop
+117	yes	server	akitaro_watanabe
+113	yes	strength	aurora
+110	yes	program	aggressive_secretary
+108	yes	hq	account_siphon
+108	yes	damage	chum
+105	yes	piece of ice	chum
+103	yes	place	armitage_codebusting
+102	yes	break	aurora
+96	yes	play	aggressive_negotiation
+96	yes	counter	astroscript_pilot_program
+93	yes	corp	account_siphon
+93	yes	hosted	astroscript_pilot_program
+92	yes	during	chum
+89	yes	use	cyberfeeder
+85	yes	r d	accelerated_beta_test
+85	yes	r	accelerated_beta_test
+85	yes	d	accelerated_beta_test
+85	yes	begins	adonis_campaign
+85	yes	per	desperado
+84	yes	end	archer
+83	yes	credits	adonis_campaign
+83	yes	turn begins	adonis_campaign
+81	yes	first	gabriel_santiago_consummate_professional
+80	yes	score	accelerated_beta_test
+78	yes	rez	accelerated_beta_test
+78	yes	cannot	stimhack
+77	yes	additional	archer
+76	yes	spend	crash_space
+76	yes	reveal	djinn
+75	yes	add	aggressive_negotiation
+75	yes	advancement	aggressive_secretary
+74	yes	end the run	archer
+73	yes	subroutine	aurora
+72	yes	[trash]	corporate_troubleshooter
+70	yes	number	bank_job
+69	yes	limit	desperado
+68	yes	trace	data_raven
+67	yes	interface	aurora
+66	yes	take	account_siphon
+66	yes	grip	deja_vu
+65	yes	ability	heimdall_1_0
+64	yes	draw	anonymous_tip
+63	yes	time	gabriel_santiago_consummate_professional
+62	yes	additional cost	archer
+60	yes	counters	medium
+59	yes	[subroutine] end	archer
+59	yes	tag	crash_space
+56	yes	[credit] break	aurora
+56	yes	first time	gabriel_santiago_consummate_professional
+55	yes	successful run	bank_job
+54	yes	pay	aggressive_secretary
+54	yes	net	chum
+53	yes	subroutines	battering_ram
+51	yes	trashed	director_haas
+50	yes	net damage	chum
+50	yes	until	datasucker
+49	yes	protecting	akitaro_watanabe
+49	yes	s	hadrians_wall
+49	yes	while	ice_carver
+47	yes	top	accelerated_beta_test
+47	yes	remainder	battering_ram
+47	yes	choose	corporate_troubleshooter
+46	yes	gain 1 [credit]	desperado
+46	yes	gains	private_security_force
+45	yes	rezzed	adonis_campaign
+44	yes	costs	accelerated_beta_test
+43	yes	use this ability	heimdall_1_0
+42	yes	lose	account_siphon
+42	yes	make	bank_job
+42	yes	stack	djinn
+42	yes	equal	psychographics
+40	yes	give	breaking_news
+39	yes	shuffle	aggressive_negotiation
+38	yes	archives	archived_memories
+38	yes	remove	crash_space
+38	yes	bad publicity	hostile_takeover
+38	yes	bad	hostile_takeover
+38	yes	publicity	hostile_takeover
+38	yes	least	zu_13_key_master
+38	yes	runner s	power_grid_overload
+38	yes	cost to play	scavenge
+37	yes	ice protecting	akitaro_watanabe
+37	yes	asset	snare
+36	yes	interface 1 [credit]	corroder
+36	yes	operation	weyland_consortium_building_a_better_world
+35	yes	instead	account_siphon
+35	yes	virus	crypsis
+35	yes	player	desperado
+35	yes	spend [click]	ruhr_valley
+34	yes	resource	bank_job
+34	yes	prevent	crash_space
+34	yes	power counter	data_raven
+34	yes	[subroutine] trace	data_raven
+34	yes	power	data_raven
+34	yes	access	demolition_run
+33	yes	[interrupt]	crash_space
+33	yes	[mu]	desperado
+33	yes	score area	notoriety
+33	yes	area	notoriety
+33	yes	deck	custom_biotics_engineered_for_success
+32	yes	credit	account_siphon
+32	yes	give the runner	breaking_news
+32	yes	x	corporate_troubleshooter
+32	yes	install cost	kate_mac_mccaffrey_digital_tinker
+32	yes	root	red_herrings
+31	yes	advanced	aggressive_secretary
+31	yes	[click] [click]	biotic_labor
+31	yes	encounter	chum
+31	yes	core	heimdall_1_0
+31	yes	core damage	heimdall_1_0
+31	yes	lose [click]	heimdall_1_0
+31	yes	draw 1 card	green_level_clearance
+31	yes	current	rook
+30	yes	[credit] 1 strength	battering_ram
+30	yes	[recurring-credit]	crash_space
+30	yes	break 1 subroutine	crypsis
+30	yes	hardware	kate_mac_mccaffrey_digital_tinker
+30	yes	event	stimhack
+29	yes	search	aggressive_negotiation
+29	yes	accesses	aggressive_secretary
+29	yes	code	gordian_blade
+29	yes	code gate	gordian_blade
+29	yes	gate	gordian_blade
+28	yes	token	aggressive_secretary
+28	yes	advancement token	aggressive_secretary
+28	yes	runner accesses	aggressive_secretary
+28	yes	barrier	aurora
+28	yes	make a successful	bank_job
+28	yes	runner 1 tag	data_raven
+28	yes	host	djinn
+28	yes	paying	rabbit_hole
+28	yes	hand	research_station
+27	yes	ignoring	accelerated_beta_test
+27	yes	gain 2 [credit]	account_siphon
+27	yes	ends	breaking_news
+27	yes	once	imp
+27	yes	until another current	cerebral_static
+27	yes	trashed until	cerebral_static
+27	yes	current is played	cerebral_static
+27	yes	played	cerebral_static
+26	yes	protecting this server	akitaro_watanabe
+26	yes	advance	astroscript_pilot_program
+26	yes	gets	chum
+26	yes	hand size	research_station
+26	yes	maximum hand size	research_station
+26	yes	size	research_station
+26	yes	maximum hand	research_station
+26	yes	maximum	research_station
+26	yes	spent	snowflake
+26	yes	increased	encryption_protocol
+25	yes	loses	closed_accounts
+25	yes	meat	crash_space
+25	yes	meat damage	crash_space
+25	yes	hosted power	data_raven
+25	yes	console	desperado
+25	yes	sentry	femme_fatale
+25	yes	runner cannot	ash_2x3zb9cy
+24	yes	tagged	closed_accounts
+24	yes	[recurring-credit] use	cyberfeeder
+24	yes	limit 1 console	desperado
+24	yes	console per	desperado
+24	yes	console per player	desperado
+24	yes	per player	desperado
+23	yes	instead of breaching	account_siphon
+23	yes	breaching	account_siphon
+23	yes	scored	aggressive_negotiation
+23	yes	rez cost	akitaro_watanabe
+23	yes	programs	cyberfeeder
+23	yes	accessing	demolition_run
+23	yes	non	djinn
+23	yes	time each turn	net_shield
+23	yes	trashes	noise_hacker_extraordinaire
+23	yes	once per	imp
+22	yes	look	accelerated_beta_test
+22	yes	number of credits	bank_job
+22	yes	[subroutine] the runner	cell_portal
+22	yes	heap	deja_vu
+22	yes	per server	sansan_city_grid
+22	yes	region	sansan_city_grid
+21	yes	score this agenda	astroscript_pilot_program
+21	yes	hosted power counter	data_raven
+21	yes	stolen	jinteki_personal_evolution
+21	yes	virus counters	medium
+21	yes	region per	sansan_city_grid
+21	yes	limit 1 region	sansan_city_grid
+21	yes	region per server	sansan_city_grid
+21	yes	worth	notoriety
+20	yes	agenda counter	astroscript_pilot_program
+20	yes	next	chum
+20	yes	virus counter	crypsis
+20	yes	[click] break	heimdall_1_0
+20	yes	runner can use	heimdall_1_0
+20	yes	made	lemuria_codecracker
+20	yes	trace [2]	matrix_analyzer
+20	yes	[2]	matrix_analyzer
+20	yes	less	medium
+20	yes	copy	rabbit_hole
+20	yes	[link]	rabbit_hole
+20	yes	power counters	draco
+20	yes	per turn	imp
+20	yes	once per turn	imp
+19	yes	installed program	archer
+19	yes	trash 1 installed	archer
+19	yes	runner is tagged	closed_accounts
+19	yes	place 1 power	data_raven
+19	yes	run on hq	gabriel_santiago_consummate_professional
+19	yes	ability [subroutine]	heimdall_1_0
+19	yes	successful give	hunter
+19	yes	piece of hardware	kate_mac_mccaffrey_digital_tinker
+19	yes	[2] if successful	matrix_analyzer
+19	yes	top card	noise_hacker_extraordinaire
+19	yes	during a run	spinal_modem
+19	yes	play this operation	celebrity_gift
+18	yes	them	accelerated_beta_test
+18	yes	installed cards	aesops_pawnshop
+18	yes	advancement counter	astroscript_pilot_program
+18	yes	remote	bank_job
+18	yes	runner encounters	chum
+18	yes	encounters	chum
+18	yes	chosen	femme_fatale
+18	yes	secretly	snowflake
+18	yes	spent credits	snowflake
+18	yes	after	sensei
+18	yes	per deck	director_haas_pet_project
+18	yes	game	levy_ar_lab_access
+17	yes	ignoring all costs	accelerated_beta_test
+17	yes	tags	account_siphon
+17	yes	remote server	bank_job
+17	yes	subroutine 1 [credit]	corroder
+17	yes	damage [subroutine]	heimdall_1_0
+17	yes	take 1 bad	hostile_takeover
+17	yes	agenda is scored	jinteki_personal_evolution
+17	yes	while the runner	snare
+17	yes	agenda point	notoriety
+17	yes	point	notoriety
+17	yes	play this event	scavenge
+17	yes	operation spend	celebrity_gift
+17	yes	operation spend [click]	celebrity_gift
+16	yes	successful instead	account_siphon
+16	yes	gain [click]	biotic_labor
+16	yes	place 1 virus	crypsis
+16	yes	icebreaker	djinn
+16	yes	memory	djinn
+16	yes	pay 1 [credit]	femme_fatale
+16	yes	hosted advancement	ice_wall
+16	yes	breach	medium
+16	yes	different	shipment_from_kaguya
+16	yes	x is equal	power_grid_overload
+16	yes	s score area	director_haas
+16	yes	s score	director_haas
+15	yes	search r d	aggressive_negotiation
+15	yes	search r	aggressive_negotiation
+15	yes	[subroutine] trash	archer
+15	yes	interface 2 [credit]	aurora
+15	yes	pool	closed_accounts
+15	yes	credit pool	closed_accounts
+15	yes	rezzed piece	corporate_troubleshooter
+15	yes	suffer	net_shield
+15	yes	order	precognition
+15	yes	runner trashes	red_herrings
+15	yes	steal	red_herrings
+15	yes	runner is accessing	snare
+15	yes	reveal spent	snowflake
+15	yes	secretly spend	snowflake
+15	yes	reveal spent credits	snowflake
+15	yes	agenda worth	notoriety
+15	yes	agenda is stolen	cerebral_static
+14	yes	[credit] [subroutine]	archer
+14	yes	hosted agenda counter	astroscript_pilot_program
+14	yes	hosted agenda	astroscript_pilot_program
+14	yes	jack	cell_portal
+14	yes	trace [3]	data_raven
+14	yes	[3] if successful	data_raven
+14	yes	[3]	data_raven
+14	yes	shuffle your stack	djinn
+14	yes	unrezzed	forged_activation_orders
+14	yes	made a successful	lemuria_codecracker
+14	yes	ice gains	tinkering
+14	yes	[credit] 1 [credit]	snowflake
+14	yes	gains [subroutine]	sensei
+14	yes	upgrade	awakening_center
+14	yes	event spend [click]	frame_job
+14	yes	event spend	frame_job
+13	yes	gain 3 [credit]	aesops_pawnshop
+13	yes	shuffle r	aggressive_negotiation
+13	yes	shuffle r d	aggressive_negotiation
+13	yes	pay 2 [credit]	aggressive_secretary
+13	yes	place 1 advancement	astroscript_pilot_program
+13	yes	place 1 agenda	astroscript_pilot_program
+13	yes	derez	cell_portal
+13	yes	during this run	chum
+13	yes	runner loses	closed_accounts
+13	yes	search your stack	djinn
+13	yes	run [subroutine]	hadrians_wall
+13	yes	lose [click] break	heimdall_1_0
+13	yes	gets 1 strength	ice_carver
+13	yes	run any server	inside_job
+13	yes	during that run	inside_job
+13	yes	use these credits	nbn_making_news
+13	yes	last	neural_emp
+13	yes	last turn	neural_emp
+13	yes	during their last	neural_emp
+13	yes	runner must pay	red_herrings
+13	yes	[credit] reveal spent	snowflake
+13	yes	runner spent	snowflake
+13	yes	runner secretly	snowflake
+13	yes	different number	snowflake
+13	yes	spend 0 [credit]	snowflake
+13	yes	runner secretly spend	snowflake
+13	yes	spent a different	snowflake
+13	yes	[credit] reveal	snowflake
+13	yes	[click] [trash]	all_nighter
+13	yes	cannot use	kati_jones
+13	yes	bottom	mr_li
+13	yes	runner s score	director_haas
+13	yes	way	howler
+13	yes	influence	the_professor_keeper_of_knowledge
+12	yes	[trash] prevent	crash_space
+12	yes	[click] place	crypsis
+12	yes	install this program	femme_fatale
+12	yes	break 1 code	gordian_blade
+12	yes	[click] gain	magnum_opus
+12	yes	[subroutine] trace [2]	matrix_analyzer
+12	yes	[click] [click] [click]	melange_mining_corp
+12	yes	advancement counters	psychographics
+12	yes	able	tollbooth
+12	yes	tokens	braintrust
+12	yes	advancement tokens	braintrust
+12	yes	memory cost	zu_13_key_master
+12	yes	trace strength	power_grid_overload
+12	yes	swap	midori
+12	yes	points	director_haas
+12	yes	costs 0 influence	heritage_committee
+11	yes	run hq	account_siphon
+11	yes	lowered	akitaro_watanabe
+11	yes	forfeit	archer
+11	yes	installed card	astroscript_pilot_program
+11	yes	fully	chum
+11	yes	[interrupt] [trash]	crash_space
+11	yes	use this credit	cyberfeeder
+11	yes	take 1 tag	data_raven
+11	yes	being	datasucker
+11	yes	code gate subroutine	gordian_blade
+11	yes	gate subroutine	gordian_blade
+11	yes	hosted advancement counter	ice_wall
+11	yes	card of r	noise_hacker_extraordinaire
+11	yes	unsuccessful	tmi
+11	yes	even	zu_13_key_master
+11	yes	move	trick_of_light
+11	yes	size is increased	public_sympathy
+11	yes	make a run	ruhr_valley
+11	yes	agenda points	director_haas
+11	yes	number of cards	power_shutdown
+11	yes	credits equal	push_your_luck
+10	yes	left	adonis_campaign
+10	yes	bank	adonis_campaign
+10	yes	rez this ice	archer
+10	yes	card from archives	archived_memories
+10	yes	agenda place	astroscript_pilot_program
+10	yes	subroutine 2 [credit]	aurora
+10	yes	[interrupt] [trash] prevent	crash_space
+10	yes	hosted virus	crypsis
+10	yes	[subroutine] trace [3]	data_raven
+10	yes	encounters this ice	data_raven
+10	yes	against	djinn
+10	yes	turn gain	gabriel_santiago_consummate_professional
+10	yes	run [subroutine] end	hadrians_wall
+10	yes	expose	infiltration
+10	yes	run during	neural_emp
+10	yes	except	snare
+10	yes	anywhere	snare
+10	yes	least 2 [link]	zu_13_key_master
+10	yes	unless	pop_up_window
+10	yes	limit 1 per	director_haas_pet_project
+10	yes	cards in hq	next_design_guarding_the_net
+10	yes	revealed	celebrity_gift
+10	yes	next turn	unorthodox_predictions
+10	yes	ability only during	panic_button
+10	yes	resolve	orion
+9	yes	breaching hq	account_siphon
+9	yes	hq if successful	account_siphon
+9	yes	hq shuffle r	aggressive_negotiation
+9	yes	hq shuffle	aggressive_negotiation
+9	yes	trash 1 program	aggressive_secretary
+9	yes	cost to rez	archer
+9	yes	program [subroutine]	archer
+9	yes	[credit] 3 strength	aurora
+9	yes	barrier subroutine	aurora
+9	yes	action	crash_space
+9	yes	using	cyberfeeder
+9	yes	until the end	datasucker
+9	yes	break 1 sentry	femme_fatale
+9	yes	sentry subroutine	femme_fatale
+9	yes	core damage [subroutine]	heimdall_1_0
+9	yes	lowering	modded
+9	yes	begins gain	pad_campaign
+9	yes	turn begins gain	pad_campaign
+9	yes	steal an agenda	red_herrings
+9	yes	run ends	stimhack
+9	yes	trace [4]	ash_2x3zb9cy
+9	yes	cannot access	ash_2x3zb9cy
+9	yes	[4] if successful	ash_2x3zb9cy
+9	yes	[4]	ash_2x3zb9cy
+9	yes	bioroid	haas_bioroid_stronger_together
+9	yes	trash cost	encryption_protocol
+9	yes	worth 1 agenda	notoriety
+9	yes	successful trash	power_grid_overload
+9	yes	gains [subroutine] end	sensei
+9	yes	card from hq	rework
+9	yes	faceup	record_reconstructor
+9	yes	corp cannot	blackmail
+9	yes	copies	reclamation_order
+9	yes	draws	bug
+9	yes	facedown	industrial_genomics_growing_solutions
+9	yes	alliance	heritage_committee
+8	yes	draw 3 cards	anonymous_tip
+8	yes	break 1 barrier	aurora
+8	yes	barrier subroutines	battering_ram
+8	yes	position	cell_portal
+8	yes	outermost	cell_portal
+8	yes	x [credit]	corporate_troubleshooter
+8	yes	remove 1 tag	crash_space
+8	yes	hosted credits	crash_space
+8	yes	pay for using	cyberfeeder
+8	yes	memory limit	djinn
+8	yes	count	djinn
+8	yes	installed piece	femme_fatale
+8	yes	install a card	haas_bioroid_engineering_the_future
+8	yes	encounter a piece	inside_job
+8	yes	install a program	modded
+8	yes	begins place	parasite
+8	yes	turn begins place	parasite
+8	yes	host ice	parasite
+8	yes	arrange	precognition
+8	yes	net damage [subroutine]	wall_of_thorns
+8	yes	bioroid ice	haas_bioroid_stronger_together
+8	yes	[mu] even	zu_13_key_master
+8	yes	[link] the memory	zu_13_key_master
+8	yes	amount	power_grid_overload
+8	yes	program gets	snowball
+8	yes	[click] host	personal_workshop
+8	yes	choose a server	sunset
+8	yes	new	bullfrog
+8	yes	lose [click] [click]	false_lead
+8	yes	[5] if successful	bernice_mai
+8	yes	trace [5]	bernice_mai
+8	yes	[5]	bernice_mai
+8	yes	including	replicator
+8	yes	server the runner	ruhr_valley
+8	yes	spend credits	dagger
+8	yes	accessed	director_haas
+8	yes	ice [subroutine]	viktor_2_0
+8	yes	bottom of r	yagura
+8	yes	subroutines 2 [credit]	breach
+8	yes	first [click]	cyber_threat
+8	yes	non alliance	heritage_committee
+8	yes	card costs	heritage_committee
+7	yes	top 3 cards	accelerated_beta_test
+7	yes	cards of r	accelerated_beta_test
+7	yes	rest	accelerated_beta_test
+7	yes	force	account_siphon
+7	yes	credits left	adonis_campaign
+7	yes	[click] take	armitage_codebusting
+7	yes	install this resource	bank_job
+7	yes	spend hosted credits	crash_space
+7	yes	spend hosted	crash_space
+7	yes	used	crypsis
+7	yes	central server	datasucker
+7	yes	central	datasucker
+7	yes	count against	djinn
+7	yes	grip shuffle	djinn
+7	yes	program place	grimoire
+7	yes	server the first	inside_job
+7	yes	run on r	medium
+7	yes	runner made	neural_emp
+7	yes	cost to steal	red_herrings
+7	yes	requirement	sansan_city_grid
+7	yes	advancement requirement	sansan_city_grid
+7	yes	turn trace	sea_source
+7	yes	cards from hq	shipment_from_mirrormorph
+7	yes	accesses this asset	snare
+7	yes	[click] run	sneakdoor_beta
+7	yes	suffer 1 core	stimhack

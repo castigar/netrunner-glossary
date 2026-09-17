@@ -48,7 +48,7 @@ import gate2_symbol_preservation
 import gate3_edit_distance
 import gate_verdict as gate_verdict_mod
 import obs_llm_judge
-from field_card_synthesis import FieldSynthesisReport, synthesize_field_to_card
+from field_card_synthesis import ALL_CAUSES, FieldSynthesisReport, synthesize_field_to_card
 from gate_verdict import GateVerdict, format_verdict
 from obs_llm_judge import (
     FlavorNaturalnessJudgment,
@@ -67,6 +67,23 @@ class EvaluationReport:
     Attributes:
         verdict:                Combined hard gate verdict from gate_verdict.combine.
         obs:                    Observation metrics from obs_llm_judge. None when skipped.
+        pipeline_predictions:   The prediction series the three hard gates scored.
+                                Named series #1 (gate_scoring_subject=pipeline_predictions).
+        tm_only_baseline_predictions: The TM-search-only prediction series, kept
+                                distinct from pipeline_predictions in the same run.
+                                Named series #2, scored only to derive the Gate 3
+                                threshold.  None when the baseline was supplied
+                                pre-measured rather than generated here.
+        gate3_threshold_provenance: "measured_in_run" when the Gate 3 threshold was
+                                derived from this run's tm_only_baseline, else
+                                "module_constant".
+        empty_by_cause:         Empty-prediction counts per empty_prediction_cause
+                                (tm_search_failure / guard_rejected_in_review_queue /
+                                approval_incomplete).  All three keys are always present.
+        field_compliant_count:  Aggregation stage 1 — (card_id, field) pairs with a
+                                non-empty prediction.
+        field_violated_count:   Aggregation stage 1 — (card_id, field) pairs with an
+                                empty prediction.
         pending_count:          Cards sent to HITL interrupt queue (pre-approval).
         pending_ratio:          pending_count / total_cards.
         empty_prediction_count: Predictions that were "" (TM search found no hit).
@@ -87,6 +104,13 @@ class EvaluationReport:
 
     verdict: GateVerdict
     obs: Optional[ObsReport] = None
+    pipeline_predictions: list[str] = field(default_factory=list)
+    tm_only_baseline_predictions: Optional[list[str]] = None
+    gate3_threshold_provenance: str = "module_constant"
+    obs_error: Optional[str] = None
+    empty_by_cause: dict[str, int] = field(default_factory=dict)
+    field_compliant_count: int = 0
+    field_violated_count: int = 0
     pending_count: int = 0
     pending_ratio: float = 0.0
     empty_prediction_count: int = 0
@@ -135,15 +159,19 @@ def _tm_predictions(
 
 def _compute_tm_baseline_median(
     hold_out_path: Path, train_path: Path
-) -> tuple[float, int]:
-    """Measure the TM-only baseline median edit distance and empty prediction count.
+) -> tuple[float, int, list[str]]:
+    """Measure the tm_only_baseline series in this run.
 
-    Used to derive Gate 3 threshold at runtime: threshold = baseline × 0.7.
-    Returns (baseline_median, empty_count).
+    This is the second named prediction series: TM search output only, with no
+    guardrails, glossary injection or HITL.  It exists solely to derive the
+    Gate 3 threshold (baseline × THRESHOLD_FACTOR) — it is never the gate
+    scoring subject.
+
+    Returns (baseline_median, empty_count, baseline_predictions).
     """
     preds, empty_count = _tm_predictions(hold_out_path, train_path)
     g3_result = gate3_edit_distance.score_hold_out(hold_out_path, preds)
-    return g3_result.median_distance, empty_count
+    return g3_result.median_distance, empty_count, preds
 
 
 def _load_pipeline_output(
@@ -231,6 +259,7 @@ def run_evaluation(
     pending_ratio: float = 0.0,
     empty_prediction_count: int = 0,
     tm_baseline_median: Optional[float] = None,
+    tm_only_baseline_predictions: Optional[list[str]] = None,
     field_synthesis: Optional[FieldSynthesisReport] = None,
     hitl_mode: Optional[str] = None,
     hitl_trigger_count: int = 0,
@@ -281,31 +310,74 @@ def run_evaluation(
     hold_out_path = Path(hold_out_path)
     glossary_path = Path(glossary_path)
 
-    # Pass predictions to all three gates (gate_input_contract AC6).
+    # Aggregation stage 3: the three gates score the pipeline_predictions series.
+    # (gate_scoring_subject = pipeline_predictions; ko_text is never a prediction.)
     g1 = gate1_term_compliance.score_hold_out(
         hold_out_path, glossary_path, predictions=predictions
     )
     g2 = gate2_symbol_preservation.score_hold_out(hold_out_path, predictions=predictions)
-    g3 = gate3_edit_distance.score_hold_out(hold_out_path, predictions)
+
+    # Gate 3's threshold is a relation, not a constant: it is derived from the
+    # tm_only_baseline series measured in THIS run and handed to the scorer, so
+    # the pass/fail decision — not merely the printout — uses the derived value.
+    gate3_derived_threshold: Optional[float] = None
+    gate3_threshold_provenance = "module_constant"
+    if tm_baseline_median is not None:
+        gate3_derived_threshold = gate3_edit_distance.derive_threshold(tm_baseline_median)
+        gate3_threshold_provenance = "measured_in_run"
+
+    g3 = gate3_edit_distance.score_hold_out(
+        hold_out_path, predictions, threshold=gate3_derived_threshold
+    )
+
+    # Aggregation stage 4: single combined verdict.
     verdict = gate_verdict_mod.combine(g1, g2, g3)
 
-    # Derive Gate 3 threshold from measured TM-only baseline.
-    gate3_derived_threshold: Optional[float] = None
-    if tm_baseline_median is not None:
-        gate3_derived_threshold = tm_baseline_median * gate3_edit_distance.THRESHOLD_FACTOR
+    # Aggregation stage 1 (field level) and the empty-prediction cause table.
+    # Every cause key is always present so the report lists all three counts,
+    # including zeros.
+    empty_by_cause: dict[str, int] = {c: 0 for c in ALL_CAUSES}
+    field_compliant_count = 0
+    field_violated_count = 0
+    if field_synthesis is not None:
+        for cause, count in field_synthesis.empty_by_cause.items():
+            empty_by_cause[cause] = count
+        for card_result in field_synthesis.card_results:
+            field_violated_count += len(card_result.violated_fields)
+            field_compliant_count += card_result.field_count - len(card_result.violated_fields)
+    else:
+        # Flat prediction series (no field records): an empty prediction can only
+        # have come from the TM search returning nothing.
+        empty_by_cause["tm_search_failure"] = empty_prediction_count
+        field_violated_count = empty_prediction_count
+        field_compliant_count = len(predictions) - empty_prediction_count
 
     obs: Optional[ObsReport] = None
+    obs_error: Optional[str] = None
     if not skip_llm_judge:
         if rule_judgments is not None and flavor_judgments is not None:
             obs = score_from_judgments(rule_judgments, flavor_judgments)
         else:
-            obs = obs_llm_judge.score_hold_out(
-                hold_out_path, predictions, llm=obs_llm
-            )
+            try:
+                obs = obs_llm_judge.score_hold_out(
+                    hold_out_path, predictions, llm=obs_llm
+                )
+            except Exception as exc:  # Bedrock unavailable / credentials absent
+                # The hard-gate verdict must still be reported.  The failure is
+                # surfaced in the report, never silently swallowed, and no
+                # observation score is invented for a judgment the model never made.
+                obs_error = f"{type(exc).__name__}: {exc}"
 
     return EvaluationReport(
         verdict=verdict,
         obs=obs,
+        obs_error=obs_error,
+        pipeline_predictions=list(predictions),
+        tm_only_baseline_predictions=tm_only_baseline_predictions,
+        gate3_threshold_provenance=gate3_threshold_provenance,
+        empty_by_cause=empty_by_cause,
+        field_compliant_count=field_compliant_count,
+        field_violated_count=field_violated_count,
         pending_count=pending_count,
         pending_ratio=pending_ratio,
         empty_prediction_count=empty_prediction_count,
@@ -348,12 +420,21 @@ def print_evaluation_report(report: EvaluationReport) -> None:
     # AC6: Named prediction series.
     # Two series coexist in the same run; gates score pipeline_predictions.
     print("=== 예측 계열 (AC6) ===")
-    print("  게이트 채점 대상: pipeline_predictions (전체 파이프라인 출력 또는 제공된 예측)")
+    print(
+        "  게이트 채점 대상: pipeline_predictions (전체 파이프라인 출력 또는 제공된 예측)"
+        f" — {len(report.pipeline_predictions)}건"
+    )
     if report.tm_baseline_median is not None:
+        n_base = (
+            len(report.tm_only_baseline_predictions)
+            if report.tm_only_baseline_predictions is not None
+            else len(report.pipeline_predictions)
+        )
         print(
             f"  tm_only_baseline: 게이트 3 임계 유도용 "
-            f"(실측값 {report.tm_baseline_median:.4f})"
+            f"(실측 중앙 편집거리 {report.tm_baseline_median:.4f}, {n_base}건)"
         )
+        print(f"  두 계열은 같은 실행 안에서 이름으로 구분된다 (채점 대상은 pipeline_predictions).")
     else:
         print("  tm_only_baseline: 미측정 (게이트 3 임계 유도 없음)")
     print()
@@ -387,7 +468,11 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         print(
             f"  게이트 3 임계: TM-only 베이스라인 측정값 {report.tm_baseline_median:.4f}"
             f" × {factor:.2f} = {derived:.4f}"
-            f"  (모듈 내장 상수: {hardcoded:.4f})"
+            f"  (출처: {report.gate3_threshold_provenance}"
+            f", 미사용 모듈 상수: {hardcoded:.4f})"
+        )
+        print(
+            f"  ※ 게이트 3 합격 판정에 실제로 쓰인 임계: {report.verdict.gate3.threshold:.4f}"
         )
     else:
         print(
@@ -403,38 +488,61 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         f" / {len(report.verdict.gate3.card_results)}건"
         f"  ({report.pending_ratio:.1%})"
     )
-    if report.empty_prediction_count > 0:
-        print(
-            f"  빈 예측 (필드 레벨): {report.empty_prediction_count}건"
-            " — 정답 ko_text 대체 없음 (reference_leakage_ban)"
-        )
+    # AC6: empty-prediction counts by cause — always printed, all three causes,
+    # including zeros.  An empty prediction is never backfilled with ko_text.
+    print()
+    print("=== 빈 예측 원인별 건수 (필드 단위) ===")
+    cause_labels = {
+        "tm_search_failure": "TM 검색 실패",
+        "guard_rejected_in_review_queue": "가드 실패로 검토 큐 잔류",
+        "approval_incomplete": "승인 미완",
+    }
+    for cause in ALL_CAUSES:
+        print(f"  {cause_labels[cause]} ({cause}): {report.empty_by_cause.get(cause, 0)}건")
+    print(
+        f"  합계: {sum(report.empty_by_cause.values())}건"
+        " — 정답 ko_text 대체 없음 (reference_leakage_ban)"
+    )
 
-    # AC7: Field-to-card synthesis breakdown
+    # AC6: three-level aggregation, printed in order.
+    print()
+    print("=== 3단 집계: 필드→카드 합성 (AC6/AC7) ===")
+    field_total = report.field_compliant_count + report.field_violated_count
+    print(
+        f"  1단 필드별: 준수 {report.field_compliant_count}건"
+        f" / 위반 {report.field_violated_count}건 (총 {field_total}개 (카드 id, 필드) 쌍)"
+    )
     if report.field_synthesis is not None:
         fs = report.field_synthesis
-        print()
-        print("=== 필드→카드 합성 (AC7) ===")
-        print(
-            f"  카드 준수: {fs.compliant_count}건 / {fs.total_count}건"
-            f"  ({fs.compliant_count / fs.total_count:.1%})" if fs.total_count > 0
-            else f"  카드 준수: {fs.compliant_count}건 / {fs.total_count}건"
+        card_rate = (
+            f"  ({fs.compliant_count / fs.total_count:.1%})" if fs.total_count > 0 else ""
         )
-        print(f"  카드 위반: {fs.violated_count}건 (필드 1개 이상 빈 예측)")
-        if sum(fs.empty_by_cause.values()) > 0:
-            print("  빈 예측 원인별 집계 (필드 단위):")
-            cause_labels = {
-                "tm_search_failure": "TM 검색 실패",
-                "guard_rejected_in_review_queue": "검토 큐 잔류",
-                "approval_incomplete": "승인 미완",
-            }
-            for cause, count in fs.empty_by_cause.items():
-                if count > 0:
-                    label = cause_labels.get(cause, cause)
-                    print(f"    {label}: {count}건")
+        print(
+            f"  2단 카드별: 준수 {fs.compliant_count}건 / 위반 {fs.violated_count}건"
+            f" (총 {fs.total_count}장){card_rate}"
+            "  — 모든 필드가 준수일 때만 카드 준수"
+        )
+    else:
+        print("  2단 카드별: 필드 레코드 없음 (평탄 예측 계열 — 카드 1장 = 예측 1개)")
+    print(
+        f"  3단 게이트별 비율/합격: 게이트1 {report.verdict.gate1.compliance_rate:.1%}"
+        f" / 게이트2 {report.verdict.gate2.preservation_rate:.1%}"
+        f" / 게이트3 중앙값 {report.verdict.gate3.median_distance:.4f}"
+    )
+    print(
+        f"  4단 최종 판정(gate_verdict.combine): {report.verdict.verdict_label}"
+    )
 
+    print()
     if report.obs is not None:
-        print()
         print(format_report(report.obs))
+    elif report.obs_error is not None:
+        print("=== 관찰 지표 (obs_llm_judge) ===")
+        print(f"  산출 실패: {report.obs_error}")
+        print("  관찰 지표는 하드 게이트가 아니므로 최종 판정에는 영향을 주지 않는다.")
+    else:
+        print("=== 관찰 지표 (obs_llm_judge) ===")
+        print("  건너뜀 (--skip-llm-judge)")
 
 
 def main() -> None:
@@ -503,6 +611,7 @@ def main() -> None:
     pending_ratio = 0.0
     empty_prediction_count = 0
     tm_baseline_median: Optional[float] = None
+    tm_baseline_predictions: Optional[list[str]] = None
     field_synthesis: Optional[FieldSynthesisReport] = None
     # AC8 HITL mode fields
     hitl_mode: Optional[str] = None
@@ -545,7 +654,9 @@ def main() -> None:
             f"(pending={pending_count}, empty={empty_prediction_count})"
         )
         print("[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...")
-        tm_baseline_median, _ = _compute_tm_baseline_median(hold_out_path, train_path)
+        tm_baseline_median, _, tm_baseline_predictions = _compute_tm_baseline_median(
+            hold_out_path, train_path
+        )
         print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
 
     elif args.pipeline_output:
@@ -568,7 +679,9 @@ def main() -> None:
             print(f"[INFO] HITL mode: {hitl_mode} (is_human_approved={is_human_approved})")
         # Measure tm_only_baseline for Gate 3 threshold derivation.
         print("[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...")
-        tm_baseline_median, _ = _compute_tm_baseline_median(hold_out_path, train_path)
+        tm_baseline_median, _, tm_baseline_predictions = _compute_tm_baseline_median(
+            hold_out_path, train_path
+        )
         print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
 
     elif args.predictions_file:
@@ -580,7 +693,9 @@ def main() -> None:
         empty_prediction_count = sum(1 for p in predictions if not p)
         # Measure tm_only_baseline for Gate 3 threshold derivation.
         print("[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...")
-        tm_baseline_median, _ = _compute_tm_baseline_median(hold_out_path, train_path)
+        tm_baseline_median, _, tm_baseline_predictions = _compute_tm_baseline_median(
+            hold_out_path, train_path
+        )
         print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
 
     else:
@@ -591,6 +706,7 @@ def main() -> None:
         # Gate 3 baseline = same predictions (TM-only IS the baseline)
         g3_result = gate3_edit_distance.score_hold_out(hold_out_path, predictions)
         tm_baseline_median = g3_result.median_distance
+        tm_baseline_predictions = list(predictions)
         print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
         if empty_prediction_count > 0:
             print(
@@ -607,6 +723,7 @@ def main() -> None:
         pending_ratio=pending_ratio,
         empty_prediction_count=empty_prediction_count,
         tm_baseline_median=tm_baseline_median,
+        tm_only_baseline_predictions=tm_baseline_predictions,
         field_synthesis=field_synthesis,
         hitl_mode=hitl_mode,
         hitl_trigger_count=hitl_trigger_count,

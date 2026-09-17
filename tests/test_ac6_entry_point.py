@@ -667,3 +667,340 @@ class TestCLIEntryPoint:
         assert "tm_only_baseline" in out, (
             "CLI default mode must print 'tm_only_baseline' in INFO output"
         )
+
+
+# ---------------------------------------------------------------------------
+# AC6 §4b: the DERIVED threshold decides Gate 3 — not the module constant
+# ---------------------------------------------------------------------------
+
+
+class TestGate3DerivedThresholdDecidesVerdict:
+    """The in-run baseline must drive the pass/fail decision, not just the printout."""
+
+    def test_gate3_passes_under_derived_threshold_while_failing_module_constant(
+        self, hold_out_cards
+    ):
+        """A median above the module constant but below the derived threshold must PASS.
+
+        Non-tautological: the expected verdict is computed from the derived
+        threshold only.  If score_hold_out ignored the derived value and kept
+        using gate3_edit_distance.THRESHOLD, this assertion would flip.
+        """
+        import gate3_edit_distance
+
+        # Predictions distant enough that the median exceeds the module constant.
+        preds = ["완전히 다른 문장 " + "가" * 30 for _ in hold_out_cards]
+        median = gate3_edit_distance.score_hold_out(HOLD_OUT, preds).median_distance
+        assert median > gate3_edit_distance.THRESHOLD, (
+            "test setup: median must exceed the module constant so the two rules disagree"
+        )
+
+        # Baseline chosen so the derived threshold clears the median.
+        baseline = (median + 0.05) / THRESHOLD_FACTOR
+        derived = baseline * THRESHOLD_FACTOR
+        assert derived > median
+
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            tm_baseline_median=baseline,
+        )
+        assert report.verdict.gate3.threshold == pytest.approx(derived, rel=1e-9), (
+            "Gate 3 must be scored against the threshold derived from this run's "
+            "tm_only_baseline, not the module constant"
+        )
+        assert report.verdict.gate3.passed is True, (
+            "Gate 3 must pass when the median is below the in-run derived threshold"
+        )
+
+    def test_gate3_fails_when_derived_threshold_drops_below_median(self, hold_out_cards):
+        """The same predictions must FAIL once the measured baseline shrinks.
+
+        Pairs with the previous test: only the measured baseline changes, so a
+        constant-threshold implementation cannot satisfy both.
+        """
+        import gate3_edit_distance
+
+        preds = ["완전히 다른 문장 " + "가" * 30 for _ in hold_out_cards]
+        median = gate3_edit_distance.score_hold_out(HOLD_OUT, preds).median_distance
+        baseline = max(median - 0.05, 0.001) / THRESHOLD_FACTOR
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            tm_baseline_median=baseline,
+        )
+        assert report.verdict.gate3.passed is False
+        assert 3 in report.verdict.failed_gates
+
+    def test_threshold_provenance_is_measured_in_run(self, hold_out_cards):
+        """baseline_provenance = measured_in_run whenever a baseline is supplied."""
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, [c["ko_text"] for c in hold_out_cards],
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+        )
+        assert report.gate3_threshold_provenance == "measured_in_run"
+
+    def test_threshold_provenance_is_module_constant_without_baseline(
+        self, hold_out_cards
+    ):
+        import gate3_edit_distance
+
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, [c["ko_text"] for c in hold_out_cards],
+            skip_llm_judge=True,
+        )
+        assert report.gate3_threshold_provenance == "module_constant"
+        assert report.verdict.gate3.threshold == pytest.approx(
+            gate3_edit_distance.THRESHOLD
+        )
+
+
+# ---------------------------------------------------------------------------
+# AC6 §2b: both named series are held distinctly on the report object
+# ---------------------------------------------------------------------------
+
+
+class TestTwoSeriesAreStructurallyDistinct:
+    """pipeline_predictions and tm_only_baseline must be separable, not just labels."""
+
+    def test_report_keeps_both_series_and_they_differ(self, hold_out_cards):
+        pipeline_preds = ["파이프라인 출력 " + str(i) for i in range(len(hold_out_cards))]
+        baseline_preds = ["TM 베이스라인 " + str(i) for i in range(len(hold_out_cards))]
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, pipeline_preds,
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+            tm_only_baseline_predictions=baseline_preds,
+        )
+        assert report.pipeline_predictions == pipeline_preds
+        assert report.tm_only_baseline_predictions == baseline_preds
+        assert report.pipeline_predictions != report.tm_only_baseline_predictions, (
+            "the two series must remain distinguishable within a single run"
+        )
+
+    def test_scored_series_is_pipeline_predictions_not_baseline(self, hold_out_cards):
+        """The gate-3 median must match pipeline_predictions, not the baseline series."""
+        import gate3_edit_distance
+
+        pipeline_preds = [c.get("ko_text", "") for c in hold_out_cards]  # distance ~0
+        baseline_preds = ["전혀 다른 문장" for _ in hold_out_cards]      # distance ~1
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, pipeline_preds,
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+            tm_only_baseline_predictions=baseline_preds,
+        )
+        expected = gate3_edit_distance.score_hold_out(
+            HOLD_OUT, pipeline_preds
+        ).median_distance
+        baseline_median = gate3_edit_distance.score_hold_out(
+            HOLD_OUT, baseline_preds
+        ).median_distance
+        assert report.verdict.gate3.median_distance == pytest.approx(expected)
+        assert report.verdict.gate3.median_distance != pytest.approx(baseline_median), (
+            "gate_scoring_subject must be pipeline_predictions, not tm_only_baseline"
+        )
+
+
+# ---------------------------------------------------------------------------
+# AC6 §6: every empty-prediction cause is reported, including zeros
+# ---------------------------------------------------------------------------
+
+
+class TestAllCausesAlwaysReported:
+    def test_report_lists_all_three_causes_even_when_zero(self, hold_out_cards, capsys):
+        from field_card_synthesis import ALL_CAUSES
+
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, [c["ko_text"] for c in hold_out_cards],
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+        )
+        assert set(report.empty_by_cause) == set(ALL_CAUSES), (
+            "empty_by_cause must always carry all three cause keys"
+        )
+        print_evaluation_report(report)
+        out = capsys.readouterr().out
+        for cause in ALL_CAUSES:
+            assert cause in out, f"cause {cause} must be reported even at zero"
+
+    def test_flat_series_empties_are_attributed_to_tm_search_failure(
+        self, hold_out_cards
+    ):
+        """Without field records an empty prediction can only be a TM search miss."""
+        preds = [
+            "" if i < 7 else c.get("ko_text", "")
+            for i, c in enumerate(hold_out_cards)
+        ]
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            empty_prediction_count=7,
+        )
+        assert report.empty_by_cause["tm_search_failure"] == 7
+        assert report.empty_by_cause["guard_rejected_in_review_queue"] == 0
+        assert report.empty_by_cause["approval_incomplete"] == 0
+
+    def test_field_level_counts_come_from_synthesis(self, tmp_path):
+        """Aggregation stage 1 counts (card_id, field) pairs, not cards."""
+        hold_out = [
+            {
+                "id": "c1",
+                "en_text": "Trash 1 card.",
+                "en_flavor": "Flavor one.",
+                "ko_text": "카드 1장을 폐기한다.",
+                "ko_flavor": "플레이버 하나.",
+            },
+            {"id": "c2", "en_text": "Gain 1 credit.", "ko_text": "1크레딧을 얻는다."},
+        ]
+        field_records = [
+            {
+                "card_id": "c1",
+                "route": "rule",
+                "draft_ko": "카드 1장을 폐기한다.",
+                "interrupted": False,
+            },
+            {"card_id": "c1", "route": "flavor", "draft_ko": "", "interrupted": True},
+            {
+                "card_id": "c2",
+                "route": "rule",
+                "draft_ko": "1크레딧을 얻는다.",
+                "interrupted": False,
+            },
+        ]
+        synthesis = synthesize_field_to_card(field_records, hold_out)
+
+        ho_path = tmp_path / "hold_out.json"
+        ho_path.write_text(json.dumps(hold_out, ensure_ascii=False), encoding="utf-8")
+        report = run_evaluation(
+            ho_path, GLOSSARY, synthesis.card_predictions,
+            skip_llm_judge=True,
+            field_synthesis=synthesis,
+        )
+        # 3 expected (card, field) pairs: c1/text, c1/flavor, c2/text
+        assert report.field_compliant_count == 2
+        assert report.field_violated_count == 1
+        # card level: c1 violated (flavor empty), c2 compliant
+        assert report.field_synthesis.compliant_count == 1
+        assert report.field_synthesis.violated_count == 1
+        assert report.empty_by_cause["guard_rejected_in_review_queue"] == 1
+
+
+# ---------------------------------------------------------------------------
+# AC6 §7: reference leakage ban holds on the report object itself
+# ---------------------------------------------------------------------------
+
+
+def test_report_predictions_are_never_the_hold_out_answers(hold_out_cards):
+    """When the pipeline yields empty drafts the report must keep them empty."""
+    preds = ["" for _ in hold_out_cards]
+    report = run_evaluation(
+        HOLD_OUT, GLOSSARY, preds,
+        skip_llm_judge=True,
+        empty_prediction_count=len(preds),
+        tm_baseline_median=0.4,
+    )
+    assert report.pipeline_predictions == preds
+    ko_texts = [c.get("ko_text", "") for c in hold_out_cards]
+    assert report.pipeline_predictions != ko_texts
+    assert all(p == "" for p in report.pipeline_predictions), (
+        "empty predictions must never be backfilled with hold_out ko_text"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC6 §1b: --run-pipeline covers the WHOLE hold-out set, size taken from the file
+# ---------------------------------------------------------------------------
+
+
+class TestRunPipelineModeCoversWholeHoldOut:
+    """The entry point must run the pipeline over every hold-out record.
+
+    The card count must come from data/hold_out.json, never from a literal.
+    A stub stands in for the real pipeline so the assertion is about the wiring,
+    not about model latency.
+    """
+
+    def test_run_pipeline_receives_full_hold_out_size(
+        self, tmp_path, monkeypatch, hold_out_cards, capsys
+    ):
+        import sys as _sys
+        import types
+
+        captured: dict = {}
+
+        def _fake_run_pipeline(*, data_dir, assets_dir, n_cards, output_path, llm_model=None):
+            captured["n_cards"] = n_cards
+            cards = json.loads(
+                (Path(data_dir) / "hold_out.json").read_text(encoding="utf-8")
+            )[:n_cards]
+            with Path(output_path).open("w", encoding="utf-8") as fh:
+                for card in cards:
+                    fh.write(json.dumps({
+                        "card_id": card["id"],
+                        "route": "rule",
+                        "draft_ko": "초벌",
+                        "tm_confidence": 0.5,
+                        "interrupted": False,
+                    }, ensure_ascii=False) + "\n")
+
+        stub = types.ModuleType("run_pipeline")
+        stub.run_pipeline = _fake_run_pipeline
+        monkeypatch.setitem(_sys.modules, "run_pipeline", stub)
+        monkeypatch.chdir(tmp_path)
+
+        orig = _sys.argv[:]
+        _sys.argv = [
+            "evaluate_pipeline",
+            "--data-dir", str(HOLD_OUT.parent),
+            "--assets-dir", str(GLOSSARY.parent),
+            "--run-pipeline",
+            "--skip-llm-judge",
+        ]
+        try:
+            main()
+        finally:
+            _sys.argv = orig
+
+        assert captured["n_cards"] == len(hold_out_cards), (
+            "the entry point must derive the card count from data/hold_out.json "
+            "(hold_out_size_source), not from a constant"
+        )
+        out = capsys.readouterr().out
+        assert "pipeline_predictions" in out and "tm_only_baseline" in out
+
+
+# ---------------------------------------------------------------------------
+# AC6 §3b: observation-metric failure must not erase the hard-gate verdict
+# ---------------------------------------------------------------------------
+
+
+def test_obs_failure_is_reported_and_gates_still_scored(hold_out_cards, capsys):
+    """A Bedrock failure surfaces as obs_error; the three gates are still judged."""
+    import obs_llm_judge as _obs
+
+    class _Boom:
+        pass
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("no AWS credentials")
+
+    orig = _obs.score_hold_out
+    _obs.score_hold_out = _raise
+    try:
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, [c["ko_text"] for c in hold_out_cards],
+            skip_llm_judge=False,
+            tm_baseline_median=0.4,
+        )
+    finally:
+        _obs.score_hold_out = orig
+
+    assert report.obs is None
+    assert report.obs_error is not None and "no AWS credentials" in report.obs_error
+    assert report.verdict is not None
+    print_evaluation_report(report)
+    out = capsys.readouterr().out
+    assert "관찰 지표" in out
+    assert "최종 판정" in out

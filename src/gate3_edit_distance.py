@@ -9,9 +9,13 @@ SERVICE.md §5, gate 3:
   The gate passes when median(distances) <= THRESHOLD.
 
 THRESHOLD derivation:
-  TM-only baseline (BM25+dense+char, v2 split) median = 0.385 (pinned by
-  tests/test_tm_baseline.py ± 0.025). A 30% improvement over the baseline
-  gives 0.385 * 0.70 ≈ 0.27.
+  The threshold is a relation, not a constant: ``tm_only_baseline × 0.70``.
+  The AC6 entry point measures the tm_only_baseline series in the same run and
+  passes ``derive_threshold(baseline)`` into :func:`score_hold_out`
+  (baseline_provenance = measured_in_run).  The module-level ``THRESHOLD``
+  below is only the fallback for callers that supply no baseline; its value
+  comes from the pinned reference baseline 0.385 × 0.70 ≈ 0.27
+  (tests/test_tm_baseline.py, ± 0.025).
 """
 from __future__ import annotations
 
@@ -64,9 +68,27 @@ def _edit_distance(pred: str, ref: str) -> float:
     return 1.0 - SequenceMatcher(None, _normalize_ws(pred), _normalize_ws(ref)).ratio()
 
 
+def derive_threshold(tm_only_baseline_median: float) -> float:
+    """Derive the Gate 3 threshold from a TM-only baseline measured in the run.
+
+    The Seed forbids pinning the gate threshold to a constant: it must be
+    derived as ``tm_only_baseline x THRESHOLD_FACTOR`` from the baseline the
+    entry point measures in the same run (baseline_provenance=measured_in_run).
+
+    Args:
+        tm_only_baseline_median: Median edit distance of the tm_only_baseline
+            prediction series, measured in this run.
+
+    Returns:
+        The derived threshold.
+    """
+    return tm_only_baseline_median * THRESHOLD_FACTOR
+
+
 def score_hold_out(
     hold_out_path: str | Path,
     predictions: list[str],
+    threshold: float | None = None,
 ) -> Gate3Result:
     """Score Hard Gate 3 over the hold-out set.
 
@@ -75,10 +97,16 @@ def score_hold_out(
             The ``ko_text`` field is the official reference translation.
         predictions: Agent-generated KO translations, one per card in the same
             order as hold_out.json.  Length must equal len(hold_out).
+        threshold: Optional pass threshold.  When given, ``passed`` is decided
+            against it instead of the module constant.  The AC6 entry point
+            passes ``derive_threshold(tm_only_baseline_median)`` so the gate is
+            judged against a baseline measured in the same run rather than a
+            pinned constant.  ``None`` keeps the module default.
 
     Returns:
-        :class:`Gate3Result` with ``passed=True`` iff median_distance <= 0.27.
+        :class:`Gate3Result` with ``passed=True`` iff median_distance <= threshold.
     """
+    effective_threshold = THRESHOLD if threshold is None else threshold
     cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
     if len(cards) != len(predictions):
@@ -103,13 +131,13 @@ def score_hold_out(
     median = float(np.median(arr)) if len(arr) > 0 else 0.0
 
     return Gate3Result(
-        passed=median <= THRESHOLD,
+        passed=median <= effective_threshold,
         median_distance=median,
         mean_distance=float(np.mean(arr)) if len(arr) > 0 else 0.0,
         min_distance=float(arr.min()) if len(arr) > 0 else 0.0,
         max_distance=float(arr.max()) if len(arr) > 0 else 0.0,
         n=len(card_results),
-        threshold=THRESHOLD,
+        threshold=effective_threshold,
         card_results=card_results,
     )
 

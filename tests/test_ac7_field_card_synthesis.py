@@ -529,9 +529,10 @@ def test_load_pipeline_output_returns_synthesis_report(tmp_path):
 
     result = _load_pipeline_output(pipeline_output, hold_out_path)
 
-    # Must return a 5-tuple
-    assert len(result) == 5, f"Expected 5-tuple, got {len(result)}-tuple"
-    predictions, pending_count, empty_count, pending_ratio, synthesis = result
+    # Must return a 6-tuple: the 6th element is the optional baseline record
+    # added when AC6 split the two prediction series (commit bb83664).
+    assert len(result) == 6, f"Expected 6-tuple, got {len(result)}-tuple"
+    predictions, pending_count, empty_count, pending_ratio, synthesis, _ = result
 
     # The synthesis report must be a FieldSynthesisReport
     assert isinstance(synthesis, FieldSynthesisReport)
@@ -583,7 +584,9 @@ def test_load_pipeline_output_card_violated_when_flavor_field_empty(tmp_path):
             "tm_confidence": 0.0,
         }) + "\n")
 
-    predictions, _, empty_count, _, synthesis = _load_pipeline_output(pipeline_output, hold_out_path)
+    predictions, _, empty_count, _, synthesis, _ = _load_pipeline_output(
+        pipeline_output, hold_out_path
+    )
 
     # Card-level prediction must be "" because the flavor field was empty
     assert predictions == [""], (

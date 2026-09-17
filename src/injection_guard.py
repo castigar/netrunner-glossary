@@ -68,6 +68,14 @@ class InjectionMatch(BaseModel):
 
     pattern: str = Field(description="The regex pattern that fired")
     matched_text: str = Field(description="The substring that matched")
+    side: str = Field(
+        default="source",
+        description=(
+            "Which text fired: 'source' for the card text, 'draft_ko' for the "
+            "generated translation. A reviewer needs this — an injection in the "
+            "source is upstream data, one in the draft is the model's own output."
+        ),
+    )
 
 
 class InjectionCheckResult(BaseModel):
@@ -97,29 +105,37 @@ class InjectionError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def check_injection(text: str) -> InjectionCheckResult:
-    """Scan *text* for prompt injection patterns.
+def check_injection(text: str, ko_text: str | None = None) -> InjectionCheckResult:
+    """Scan *text* — and optionally a KO draft — for prompt injection patterns.
 
     Card text is game data and must never be executed as instructions by an
     LLM.  This function detects common injection signals so the caller can
     block the text and route it to the review queue via interrupt().
 
     Args:
-        text: Raw card text (EN or KO) before it reaches any LLM prompt.
+        text: Raw source card text before it reaches any LLM prompt.
+        ko_text: Optional KO draft translation for the same card.  A draft can
+            carry an injection the source did not — the model wrote it — so a
+            guard that only reads the source cannot see it.  Callers holding
+            both sides pass both; ``side`` on each match says which one fired.
 
     Returns:
         :class:`InjectionCheckResult` — ``passed=True`` when no patterns fire.
     """
     matches: list[InjectionMatch] = []
-    for pattern in _PATTERNS:
-        m = pattern.search(text)
-        if m:
-            matches.append(
-                InjectionMatch(
-                    pattern=pattern.pattern,
-                    matched_text=m.group(0),
+    for side, candidate in (("source", text), ("draft_ko", ko_text)):
+        if not candidate:
+            continue
+        for pattern in _PATTERNS:
+            m = pattern.search(candidate)
+            if m:
+                matches.append(
+                    InjectionMatch(
+                        pattern=pattern.pattern,
+                        matched_text=m.group(0),
+                        side=side,
+                    )
                 )
-            )
     return InjectionCheckResult(passed=len(matches) == 0, matches=matches)
 
 

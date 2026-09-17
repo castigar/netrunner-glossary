@@ -146,3 +146,36 @@ def test_adding_keywords_did_not_change_the_card_set_or_the_split():
     assert len(cards) == 980
     hold_out, train = split_corpus(cards, seed=42, holdout_size=100)
     assert (len(hold_out), len(train)) == (100, 880)
+
+
+@needs_corpus
+def test_flavor_is_loaded_for_cards_translated_in_both_languages():
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    assert all("en_flavor" in c and "ko_flavor" in c for c in cards)
+    with_flavor = [c for c in cards if c["ko_flavor"]]
+    assert len(with_flavor) == 698
+
+
+@needs_corpus
+def test_flavor_pairs_come_from_the_same_printing():
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    net_celebrity = next(c for c in cards if c["id"] == "net_celebrity")
+    assert net_celebrity["en_flavor"] == "Fifteen seconds of fame."
+    assert net_celebrity["ko_flavor"] == "15초 간의 유명세."
+
+
+@needs_corpus
+def test_flavor_is_never_untranslated_residue():
+    """KO flavour without Hangul is dropped, the same rule the rules text uses."""
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    assert all(_has_hangul(c["ko_flavor"]) for c in cards if c["ko_flavor"])
+
+
+@needs_corpus
+def test_adding_flavor_did_not_change_the_card_set_or_the_split():
+    """The TM baseline reads only en_text/ko_text, so it must be unaffected."""
+    cards = load_clean_corpus(Path(CORPUS_ROOT))
+    assert len(cards) == 980
+    hold_out, train = split_corpus(cards, seed=42, holdout_size=100)
+    assert (len(hold_out), len(train)) == (100, 880)
+    assert sum(1 for c in hold_out if c["ko_flavor"]) == 65

@@ -130,6 +130,54 @@ def _load_legacy_keywords(root: Path) -> dict[str, dict[str, list[str]]]:
     return out
 
 
+def _read_printing_flavor(printings_dir: Path) -> dict[str, str]:
+    """Return {printing id: flavor} for every printing carrying flavor text."""
+    flavor: dict[str, str] = {}
+    if not printings_dir.is_dir():
+        return flavor
+    for fname in printings_dir.iterdir():
+        if fname.suffix != ".json":
+            continue
+        with fname.open(encoding="utf-8") as f:
+            printings = json.load(f)
+        for printing in printings:
+            pid = printing.get("id", "")
+            text = printing.get("flavor") or ""
+            if pid and text:
+                flavor[pid] = text
+    return flavor
+
+
+def _load_printing_flavor(root: Path) -> dict[str, dict[str, str]]:
+    """Return {card_id: {"en": str, "ko": str}} for cards with flavor in both languages.
+
+    Flavor text does not live on the card in the v2 layout — it belongs to the
+    *printing*, because reprints can carry different flavor.  EN flavor is in
+    v2/printings and KO flavor in v2/translations/ko/printings, both keyed by
+    printing id, so the same join load_clean_corpus already uses for keywords
+    applies (legacy ``code`` == printing ``id``).
+
+    Only printings carrying flavor in both languages are kept, so the EN/KO pair
+    always describes the same printing.  A card with several such printings takes
+    the lowest printing id, which keeps the result deterministic.  KO flavor
+    without Hangul is untranslated residue and is dropped before the join, the
+    same rule the rules text uses.
+    """
+    en_raw = _read_printing_flavor(root / "v2" / "printings")
+    ko_raw = _read_printing_flavor(root / "v2" / "translations" / "ko" / "printings")
+    code_to_card = _build_code_to_card_id(root)
+
+    out: dict[str, dict[str, str]] = {}
+    for pid in sorted(en_raw.keys() & ko_raw.keys()):
+        card_id = code_to_card.get(pid)
+        if not card_id or card_id in out:
+            continue
+        if not _has_hangul(ko_raw[pid]):
+            continue
+        out[card_id] = {"en": en_raw[pid], "ko": ko_raw[pid]}
+    return out
+
+
 def load_clean_corpus(root: Path | None = None) -> list[dict]:
     """Return sorted list of EN/KO card pairs matching the clean corpus criteria.
 
@@ -142,6 +190,8 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
           "date":     str,                # YYYY-MM-DD earliest release
           "en_keywords": list[str],       # EN subtype line, [] when absent
           "ko_keywords": list[str],       # KO subtype line, [] when absent
+          "en_flavor": str,               # EN flavour text, "" when absent
+          "ko_flavor": str,               # KO flavour text, "" when absent
         }
 
     The list is sorted by (date, id) for reproducibility before any shuffle.
@@ -154,6 +204,7 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
 
     card_earliest = _build_card_earliest_dates(root)
     legacy_keywords = _load_legacy_keywords(root)
+    printing_flavor = _load_printing_flavor(root)
 
     # Load KO translations into a lookup map
     ko_lookup: dict[str, dict] = {}
@@ -195,6 +246,7 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
             continue
 
         kw = legacy_keywords.get(cid, {})
+        fl = printing_flavor.get(cid, {})
         clean.append(
             {
                 "id": cid,
@@ -203,6 +255,8 @@ def load_clean_corpus(root: Path | None = None) -> list[dict]:
                 "date": date,
                 "en_keywords": kw.get("en", []),
                 "ko_keywords": kw.get("ko", []),
+                "en_flavor": fl.get("en", ""),
+                "ko_flavor": fl.get("ko", ""),
             }
         )
 

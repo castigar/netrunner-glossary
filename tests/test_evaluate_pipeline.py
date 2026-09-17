@@ -94,11 +94,13 @@ def test_gate3_self_reference_median_is_zero(reference_predictions):
 
 def test_gate3_self_reference_passes(reference_predictions):
     """Self-reference predictions must pass Gate 3 (0.0 <= THRESHOLD)."""
-    from gate3_edit_distance import THRESHOLD
+    from gate3_edit_distance import THRESHOLD, TM_BASELINE_MEDIAN, THRESHOLD_FACTOR
     report = run_evaluation(HOLD_OUT, GLOSSARY, reference_predictions, skip_llm_judge=True)
     assert report.verdict.gate3.passed is True
-    # Also confirm threshold is the expected constant for diagnostics
-    assert THRESHOLD == pytest.approx(0.27)
+    # The threshold is derived, not written down: pinning the literal 0.27 here
+    # was what let the hand-rounded constant stand in for the real derivation
+    # 0.2695, running the gate 0.0005 looser than the spec.
+    assert THRESHOLD == TM_BASELINE_MEDIAN * THRESHOLD_FACTOR
 
 
 def test_gate3_self_reference_n_is_100(reference_predictions):

@@ -27,12 +27,15 @@ from pathlib import Path
 
 import numpy as np
 
-# Derived from TM-only baseline (0.385) × 0.70 — see module docstring.
-THRESHOLD = 0.27
-
-# TM-only baseline median for reference (pinned by test_tm_baseline.py).
+# TM-only baseline median, pinned by tests/test_tm_baseline.py, which measures it
+# with compute_tm_baseline() rather than asserting it.
 TM_BASELINE_MEDIAN = 0.385
 THRESHOLD_FACTOR = 0.70  # gate requires this fraction of the baseline
+
+# Derived, not written down.  The spec forbids putting a measured number into an
+# acceptance criterion as a constant: the gate must move when the baseline moves.
+# Writing 0.27 by hand also quietly rounded it — the derivation is 0.2695.
+THRESHOLD = TM_BASELINE_MEDIAN * THRESHOLD_FACTOR
 
 
 @dataclass

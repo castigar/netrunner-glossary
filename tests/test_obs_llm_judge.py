@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -26,6 +25,7 @@ from obs_llm_judge import (
     _aggregate,
     format_report,
     score_from_judgments,
+    score_hold_out,
 )
 
 DATA_HOLD_OUT = Path(__file__).parent.parent / "data" / "hold_out.json"
@@ -312,65 +312,155 @@ def test_format_report_is_string():
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_llm(rule_scores: list[int], flavor_scores: list[int]) -> MagicMock:
-    """Build a mock LLM that returns scripted structured outputs."""
-    rule_judgments = [
-        RulePatternJudgment(card_id=f"c{i}", score=s, reasoning="mock")
-        for i, s in enumerate(rule_scores)
-    ]
-    flavor_judgments = [
-        FlavorNaturalnessJudgment(card_id=f"c{i}", score=s, reasoning="mock")
-        for i, s in enumerate(flavor_scores)
-    ]
+class _RecordingChain:
+    """Stands in for a built LangChain chain: records inputs, returns scripted results."""
 
-    class MockChain:
-        def __init__(self, results):
-            self._results = results
+    def __init__(self, results, seen=None):
+        self._results = results
+        self._seen = seen
 
-        def batch(self, inputs, config=None):
-            return self._results[: len(inputs)]
-
-    class MockLLM:
-        def __init__(self, rule_results, flavor_results):
-            self._rule_chain = MockChain(rule_results)
-            self._flavor_chain = MockChain(flavor_results)
-            self._call_count = 0
-
-        def with_structured_output(self, schema):
-            # Returns a mock that, when used in a chain, returns appropriate results
-            return self
-
-        def batch(self, inputs, config=None):
-            if self._call_count == 0:
-                self._call_count += 1
-                return rule_judgments[: len(inputs)]
-            else:
-                return flavor_judgments[: len(inputs)]
-
-    return MockLLM(rule_judgments, flavor_judgments)
+    def batch(self, inputs, config=None):
+        if self._seen is not None:
+            self._seen.extend(inputs)
+        return self._results[: len(inputs)]
 
 
-def test_score_hold_out_with_mock(tmp_path):
-    """score_hold_out builds chains and returns ObsReport when LLM is mocked."""
+def _patch_chains(monkeypatch, rule_results, flavor_results, rule_seen=None, flavor_seen=None):
+    """Replace the chain builders so score_hold_out runs without Bedrock.
+
+    Patching at the builder boundary (not the LLM) keeps score_hold_out's own
+    orchestration — which judge sees which text, which cards are skipped — under
+    test. Patching the LLM instead pushed every assertion through LangChain's
+    Runnable machinery, which is why the previous mock was written and then
+    silently bypassed.
+    """
     import obs_llm_judge as mod
 
+    monkeypatch.setattr(
+        mod, "_build_rule_chain", lambda llm: _RecordingChain(rule_results, rule_seen)
+    )
+    monkeypatch.setattr(
+        mod, "_build_flavor_chain", lambda llm: _RecordingChain(flavor_results, flavor_seen)
+    )
+
+
+def test_score_hold_out_actually_runs_the_llm_path(tmp_path, monkeypatch):
+    """score_hold_out itself is exercised, not routed around.
+
+    The previous version built a mock and then never used it: it called
+    score_from_judgments instead, so score_hold_out — the function that decides
+    what each judge is shown — had no test at all.
+    """
     cards = [
-        {"id": f"c{i}", "en_text": "Install.", "ko_text": "설치한다."}
+        {"id": f"c{i}", "en_text": "Install.", "ko_text": "설치한다.",
+         "en_flavor": "Flavour.", "ko_flavor": "플레이버."}
         for i in range(3)
     ]
     path = _write_hold_out(tmp_path, cards)
-    predictions = ["설치한다."] * 3
+    _patch_chains(
+        monkeypatch,
+        [_make_rule_judgment(f"c{i}", 3) for i in range(3)],
+        [_make_flavor_judgment(f"c{i}", 2) for i in range(3)],
+    )
 
-    rule_js = [_make_rule_judgment(f"c{i}", 3) for i in range(3)]
-    flavor_js = [_make_flavor_judgment(f"c{i}", 3) for i in range(3)]
-
-    # Build a real ObsReport via score_from_judgments (no LLM needed)
-    report = score_from_judgments(rule_js, flavor_js)
+    report = score_hold_out(
+        path,
+        predictions=["설치한다."] * 3,
+        flavor_predictions=["플레이버."] * 3,
+        llm=object(),
+    )
 
     assert isinstance(report, ObsReport)
     assert report.n == 3
+    assert report.flavor_n == 3
     assert report.rule_pattern_mean == pytest.approx(3.0)
-    assert report.flavor_naturalness_mean == pytest.approx(3.0)
+    assert report.flavor_naturalness_mean == pytest.approx(2.0)
+
+
+def test_flavor_judge_is_shown_flavor_text_not_the_rule_translation(tmp_path, monkeypatch):
+    """The flavour judge must receive the flavour translation, not the rule one.
+
+    This is the defect the metric had: both judges were handed ``predictions``,
+    so "flavour naturalness" scored rule text. Asserting on what reaches the
+    chain is the only way this stays fixed.
+    """
+    seen: list[dict] = []
+    cards = [{"id": "c0", "en_text": "Install.", "ko_text": "설치한다.",
+              "en_flavor": "Fifteen seconds of fame.", "ko_flavor": "15초 간의 유명세."}]
+    path = _write_hold_out(tmp_path, cards)
+    _patch_chains(
+        monkeypatch,
+        [_make_rule_judgment("c0", 3)],
+        [_make_flavor_judgment("c0", 3)],
+        flavor_seen=seen,
+    )
+
+    score_hold_out(
+        path,
+        predictions=["설치한다."],
+        flavor_predictions=["15초 간의 유명세."],
+        llm=object(),
+    )
+
+    assert seen == [{"card_id": "c0", "ko_text": "15초 간의 유명세."}]
+
+
+def test_cards_without_flavor_are_excluded_not_scored_zero(tmp_path, monkeypatch):
+    """35 of the 100 hold-out cards carry no KO flavour; they leave the denominator.
+
+    Scoring them as 0 would drag the mean below target for a reason that has
+    nothing to do with translation quality.
+    """
+    cards = [
+        {"id": "c0", "en_text": "A.", "ko_text": "가.",
+         "en_flavor": "F.", "ko_flavor": "플레이버."},
+        {"id": "c1", "en_text": "B.", "ko_text": "나.",
+         "en_flavor": "", "ko_flavor": ""},
+    ]
+    path = _write_hold_out(tmp_path, cards)
+    _patch_chains(
+        monkeypatch,
+        [_make_rule_judgment("c0", 3), _make_rule_judgment("c1", 3)],
+        [_make_flavor_judgment("c0", 2)],
+    )
+
+    report = score_hold_out(
+        path,
+        predictions=["가.", "나."],
+        flavor_predictions=["플레이버.", ""],
+        llm=object(),
+    )
+
+    assert report.n == 2
+    assert report.flavor_n == 1
+    assert report.flavor_naturalness_mean == pytest.approx(2.0)
+    assert report.card_observations[1].flavor_naturalness_score is None
+
+
+def test_flavor_not_supplied_is_reported_as_unmeasured(tmp_path, monkeypatch):
+    """Omitting flavour translations must not read as 'target missed' or as 0.0."""
+    cards = [{"id": "c0", "en_text": "A.", "ko_text": "가.",
+              "en_flavor": "F.", "ko_flavor": "플레이버."}]
+    path = _write_hold_out(tmp_path, cards)
+    _patch_chains(monkeypatch, [_make_rule_judgment("c0", 3)], [])
+
+    report = score_hold_out(path, predictions=["가."], llm=object())
+
+    assert report.flavor_measured is False
+    assert report.flavor_n == 0
+    assert report.flavor_naturalness_meets_target is False
+    assert "미측정" in format_report(report)
+
+
+def test_card_id_comes_from_the_record_not_the_model(tmp_path, monkeypatch):
+    """A hallucinated card_id in the judge output must not relabel the row."""
+    cards = [{"id": "real_id", "en_text": "A.", "ko_text": "가."}]
+    path = _write_hold_out(tmp_path, cards)
+    _patch_chains(monkeypatch, [_make_rule_judgment("HALLUCINATED", 3)], [])
+
+    report = score_hold_out(path, predictions=["가."], llm=object())
+
+    assert report.card_observations[0].card_id == "real_id"
 
 
 def test_score_hold_out_length_mismatch_via_from_judgments():

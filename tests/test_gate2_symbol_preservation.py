@@ -22,6 +22,7 @@ from gate2_symbol_preservation import (
     _canonical_symbols_ko,
     _check_card,
     score_hold_out,
+    score_reference,
 )
 
 DATA_HOLD_OUT = Path(__file__).parent.parent / "data" / "hold_out.json"
@@ -396,14 +397,18 @@ def test_real_hold_out_gate2_runs_and_returns_result():
     output; the reference translations serve as gold standard for gate 3
     (edit distance), not gate 2.
     """
-    result = score_hold_out(DATA_HOLD_OUT)
+    result = score_reference(DATA_HOLD_OUT)
     assert isinstance(result, Gate2Result)
-    assert 0.0 <= result.preservation_rate <= 1.0
-    assert result.cards_passed <= result.cards_total
-    if result.preservation_rate >= THRESHOLD:
-        assert result.passed is True
-    else:
-        assert result.passed is False
+    assert result.cards_total == 100
+
+    # The official KO translations drop [interrupt] on these three cards, so the
+    # reference itself cannot reach 100%.  Asserting the known shortfall is what
+    # makes this test able to fail: the previous version restated
+    # `passed == (rate >= THRESHOLD)`, which the implementation defines to be true.
+    failed_ids = {cr.card_id for cr in result.card_results if not cr.passed}
+    assert {"muresh_bodysuit", "sacrificial_construct", "disrupter"} <= failed_ids
+    assert result.preservation_rate < 1.0
+    assert result.passed is False
 
 
 @pytest.mark.skipif(
@@ -422,11 +427,48 @@ def test_real_hold_out_has_100_cards():
 def test_real_hold_out_trace_equivalence_applied():
     """Cards with Trace[N] in EN and <trace>추적 N</trace> in KO must not
     be flagged as violations — the normalization equivalence rule is applied."""
-    result = score_hold_out(DATA_HOLD_OUT)
-    for cr in result.card_results:
-        for sym in list(cr.missing) + list(cr.extra):
-            # Any mismatch must NOT be a trace normalization failure:
-            # if EN trace_N and KO trace_N match, they won't appear in missing/extra
-            assert not (sym.startswith("trace_") and cr.en_symbols.get(sym) == cr.ko_symbols.get(sym)), (
-                f"Card {cr.card_id}: {sym} counted as mismatch but counts are equal"
-            )
+    result = score_reference(DATA_HOLD_OUT)
+    by_id = {cr.card_id: cr for cr in result.card_results}
+
+    # snatch_and_grab: EN "Trace[3]" vs KO "<trace>추적 3</trace>".
+    # searchlight: two "[subroutine]Trace[X]" vs "[subroutine] <trace>추적 X</trace>".
+    # A literal comparison would report one missing and one extra on each.
+    for card_id in ("snatch_and_grab", "searchlight"):
+        cr = by_id[card_id]
+        assert cr.en_symbols.get("trace_3") or cr.en_symbols.get("trace_X")
+        assert not [s for s in list(cr.missing) + list(cr.extra) if s.startswith("trace_")], (
+            f"{card_id}: trace equivalence not applied — {cr.missing} / {cr.extra}"
+        )
+        assert cr.passed, f"{card_id} should pass once Trace is normalized"
+
+
+@pytest.mark.skipif(
+    not DATA_HOLD_OUT.exists(),
+    reason="data/hold_out.json not present",
+)
+def test_predictions_are_scored_not_the_reference():
+    """The gate must grade agent output when predictions are supplied.
+
+    Without this the gate reads the official ko_text no matter what the agent
+    produced, so it could never fail because of the agent — the defect the
+    signature change fixes.
+    """
+    cards = json.loads(DATA_HOLD_OUT.read_text(encoding="utf-8"))
+    stripped = ["기호가 전혀 없는 번역." for _ in cards]
+
+    result = score_hold_out(DATA_HOLD_OUT, predictions=stripped)
+
+    assert result.cards_passed < result.cards_total
+    assert result.passed is False
+    # Cards whose EN carries no symbol at all still pass; the ones that do must not.
+    with_symbols = [cr for cr in result.card_results if cr.en_symbols]
+    assert with_symbols and all(not cr.passed for cr in with_symbols)
+
+
+@pytest.mark.skipif(
+    not DATA_HOLD_OUT.exists(),
+    reason="data/hold_out.json not present",
+)
+def test_predictions_length_mismatch_is_rejected():
+    with pytest.raises(ValueError):
+        score_hold_out(DATA_HOLD_OUT, predictions=["하나뿐"])

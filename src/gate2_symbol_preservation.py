@@ -140,12 +140,20 @@ def score_hold_out(
 
     Args:
         hold_out_path: Path to data/hold_out.json (list of {id, en_text, ko_text}).
-        predictions: Optional KO predictions, one per card in hold_out order.
-            When provided, each prediction is scored instead of card['ko_text'].
-            Enables pipeline output scoring (gate_input_contract AC6).
+        predictions: Agent-generated KO translations, one per card in hold_out
+            order; each is scored instead of ``card['ko_text']``.  This is what
+            the gate is for — it decides whether *agent* output ships, and it is
+            how the pipeline's output reaches the gate (gate_input_contract AC6).
+            When None the official ``ko_text`` is scored instead, which measures
+            the corpus, not the agent; that mode is a diagnostic
+            (see :func:`score_reference`), not a delivery decision.
 
     Returns:
         :class:`Gate2Result` with ``passed=True`` iff all cards preserve symbols.
+
+    Raises:
+        ValueError: if *predictions* is given and its length differs from the
+            hold-out length, the same guard gate 3 applies.
     """
     cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
@@ -178,3 +186,16 @@ def score_hold_out(
         cards_total=total,
         card_results=card_results,
     )
+
+
+def score_reference(hold_out_path: str | Path) -> Gate2Result:
+    """Score the official KO translations instead of agent output.
+
+    A diagnostic, not a delivery gate: it measures the corpus.  It is useful
+    because the answer is known to be below 1.0 — muresh_bodysuit,
+    sacrificial_construct and disrupter drop [interrupt] in the official KO — so
+    it reveals the ceiling any agent is graded against, and it makes the
+    difference between "the agent lost a symbol" and "the reference never had
+    one" visible instead of silent.
+    """
+    return score_hold_out(hold_out_path, predictions=None)

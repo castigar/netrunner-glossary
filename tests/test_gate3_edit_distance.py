@@ -91,20 +91,33 @@ def test_edit_distance_empty_strings():
 # ---------------------------------------------------------------------------
 
 
-def test_threshold_derived_from_baseline():
-    """THRESHOLD must equal TM_BASELINE_MEDIAN × THRESHOLD_FACTOR (within float tolerance)."""
-    derived = TM_BASELINE_MEDIAN * THRESHOLD_FACTOR
-    assert abs(THRESHOLD - derived) < 0.005, (
-        f"THRESHOLD {THRESHOLD} not within 0.005 of baseline*factor {derived:.4f}"
-    )
+def test_threshold_is_derived_not_written_down():
+    """THRESHOLD must *be* TM_BASELINE_MEDIAN x THRESHOLD_FACTOR, not a copy of it.
+
+    Exact equality, not a tolerance.  The previous version allowed 0.005 of slack,
+    which is what let the hand-written 0.27 stand in for the real derivation 0.2695:
+    the gate silently ran 0.0005 looser than the spec.  With equality the gate moves
+    when the baseline moves, which is the point of deriving it.
+    """
+    assert THRESHOLD == TM_BASELINE_MEDIAN * THRESHOLD_FACTOR
 
 
-def test_threshold_value():
-    assert THRESHOLD == pytest.approx(0.27, abs=0.005)
+def test_threshold_is_not_one_of_the_retired_values():
+    """0.25 came from the discarded 0.359 baseline (legacy pack/ layout)."""
+    assert THRESHOLD != 0.25
+    assert TM_BASELINE_MEDIAN != 0.359
 
 
-def test_tm_baseline_value():
-    assert TM_BASELINE_MEDIAN == pytest.approx(0.385, abs=0.025)
+def test_baseline_constant_agrees_with_the_measured_baseline():
+    """This module duplicates the baseline; the two copies must not drift apart.
+
+    tests/test_tm_baseline.py is where the number is actually *measured*, via
+    compute_tm_baseline().  This only pins that the gate reads the same one, so
+    changing the measurement without changing the gate fails here.
+    """
+    import test_tm_baseline
+
+    assert TM_BASELINE_MEDIAN == test_tm_baseline.BASELINE_MEDIAN
 
 
 # ---------------------------------------------------------------------------
@@ -266,10 +279,20 @@ def test_real_hold_out_self_reference_is_zero():
     not DATA_HOLD_OUT.exists(),
     reason="data/hold_out.json not present",
 )
-def test_real_hold_out_gate3_mechanism_correct():
-    """Gate correctly reflects: passed iff median_distance <= THRESHOLD."""
-    result = score_self_reference(DATA_HOLD_OUT)
-    if result.median_distance <= THRESHOLD:
-        assert result.passed is True
-    else:
-        assert result.passed is False
+def test_real_hold_out_rejects_untranslated_predictions():
+    """Feeding the EN source back as the 'translation' must fail the gate.
+
+    Replaces an if/else that restated ``passed == (median <= THRESHOLD)`` and so
+    could not fail.  This asserts an outcome the implementation could get wrong:
+    leaving the source untranslated is the cheapest way to game an edit-distance
+    gate, and on the real 100 cards it must be rejected.
+    """
+    import json
+
+    cards = json.loads(Path(DATA_HOLD_OUT).read_text(encoding="utf-8"))
+    predictions = [c["en_text"] for c in cards]
+
+    result = score_hold_out(DATA_HOLD_OUT, predictions)
+
+    assert result.median_distance > THRESHOLD
+    assert result.passed is False

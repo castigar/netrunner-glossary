@@ -48,6 +48,7 @@ from translation_graph import (
     _route_decision,
     _validate_route,
     build_translation_graph,
+    expand_card_to_field_inputs,
     generate_draft,
     process_flavor,
     process_rule,
@@ -164,6 +165,159 @@ def test_build_translation_graph_is_idempotent():
     r2 = g2.invoke({"card_id": "b", "en_flavor": "y"})
     assert r1["text_type"] == "rule"
     assert r2["text_type"] == "flavor"
+
+
+# ===========================================================================
+# AC1 DraftRecord-count and route-value tests (expansion + graph)
+# ===========================================================================
+#
+# AC1 requires executable tests asserting the COUNT and ROUTE VALUES of
+# DraftRecords produced for each card type.  These use expand_card_to_field_inputs
+# (which is also called by the pipeline runner) to turn a card dict into one
+# CardState per non-empty field, then run each CardState through the stub graph
+# (no LLM/TM deps) and convert the resulting state to a DraftRecord via
+# _state_to_draft_record.
+#
+
+
+def _to_draft_record(state: CardState) -> dict:
+    """Minimal projection: the only fields AC1 cares about are card_id and route."""
+    return {
+        "card_id": state.get("card_id", ""),
+        "route": state.get("text_type", ""),
+    }
+
+
+def _run_field_inputs(card: dict) -> list[dict]:
+    """Expand card → field inputs → run each through stub graph → DraftRecord list."""
+    field_inputs = expand_card_to_field_inputs(card)
+    records = []
+    for initial in field_inputs:
+        state = translation_graph.invoke(initial)
+        records.append(_to_draft_record(state))
+    return records
+
+
+def test_expand_text_only_card_produces_one_field_input():
+    """Text-only card: expand_card_to_field_inputs returns exactly 1 CardState."""
+    card = {"id": "sure_gamble", "en_text": "Gain 9[credit].", "en_flavor": ""}
+    inputs = expand_card_to_field_inputs(card)
+    assert len(inputs) == 1, f"Expected 1 field input, got {len(inputs)}"
+
+
+def test_expand_flavor_only_card_produces_one_field_input():
+    """Flavor-only card: expand_card_to_field_inputs returns exactly 1 CardState."""
+    card = {"id": "sure_gamble", "en_text": "", "en_flavor": "Run fast and loose."}
+    inputs = expand_card_to_field_inputs(card)
+    assert len(inputs) == 1, f"Expected 1 field input, got {len(inputs)}"
+
+
+def test_expand_both_fields_card_produces_two_field_inputs():
+    """Both-field card: expand_card_to_field_inputs returns exactly 2 CardStates."""
+    card = {
+        "id": "hedge_fund",
+        "en_text": "Gain 9[credit].",
+        "en_flavor": "All that glitters...",
+    }
+    inputs = expand_card_to_field_inputs(card)
+    assert len(inputs) == 2, f"Expected 2 field inputs (one per field), got {len(inputs)}"
+
+
+def test_expand_neither_field_card_produces_no_inputs():
+    """Card with both fields empty: expand_card_to_field_inputs returns empty list."""
+    card = {"id": "blank", "en_text": "", "en_flavor": ""}
+    inputs = expand_card_to_field_inputs(card)
+    assert len(inputs) == 0, f"Expected 0 field inputs for empty card, got {len(inputs)}"
+
+
+def test_text_only_card_draft_record_has_rule_route():
+    """Text-only card produces exactly 1 DraftRecord with route='rule'."""
+    card = {"id": "sure_gamble", "en_text": "Gain 9[credit].", "en_flavor": ""}
+    records = _run_field_inputs(card)
+    assert len(records) == 1, f"Expected 1 DraftRecord, got {len(records)}"
+    assert records[0]["route"] == "rule", (
+        f"text-only card must produce route='rule', got {records[0]['route']!r}"
+    )
+
+
+def test_flavor_only_card_draft_record_has_flavor_route():
+    """Flavor-only card produces exactly 1 DraftRecord with route='flavor'."""
+    card = {"id": "sure_gamble", "en_text": "", "en_flavor": "Run fast and loose."}
+    records = _run_field_inputs(card)
+    assert len(records) == 1, f"Expected 1 DraftRecord, got {len(records)}"
+    assert records[0]["route"] == "flavor", (
+        f"flavor-only card must produce route='flavor', got {records[0]['route']!r}"
+    )
+
+
+def test_both_fields_card_produces_two_draft_records_with_distinct_routes():
+    """Both-field card produces exactly 2 DraftRecords with routes 'rule' and 'flavor'."""
+    card = {
+        "id": "hedge_fund",
+        "en_text": "Gain 9[credit].",
+        "en_flavor": "All that glitters...",
+    }
+    records = _run_field_inputs(card)
+    assert len(records) == 2, (
+        f"Both-field card must produce 2 DraftRecords (one per field), got {len(records)}"
+    )
+    routes = [r["route"] for r in records]
+    assert "rule" in routes, f"Expected a 'rule' DraftRecord in {routes}"
+    assert "flavor" in routes, f"Expected a 'flavor' DraftRecord in {routes}"
+    assert routes[0] != routes[1], f"Both DraftRecords must have different routes: {routes}"
+
+
+def test_both_fields_card_rule_record_comes_first():
+    """For a both-field card, the rule DraftRecord is produced before the flavor one."""
+    card = {
+        "id": "hedge_fund",
+        "en_text": "Gain 9[credit].",
+        "en_flavor": "All that glitters...",
+    }
+    records = _run_field_inputs(card)
+    assert len(records) == 2
+    assert records[0]["route"] == "rule", (
+        f"First DraftRecord should be 'rule', got {records[0]['route']!r}"
+    )
+    assert records[1]["route"] == "flavor", (
+        f"Second DraftRecord should be 'flavor', got {records[1]['route']!r}"
+    )
+
+
+def test_both_fields_card_draft_records_share_card_id():
+    """Both DraftRecords from a two-field card must carry the same card_id."""
+    card = {
+        "id": "hedge_fund",
+        "en_text": "Gain 9[credit].",
+        "en_flavor": "All that glitters...",
+    }
+    records = _run_field_inputs(card)
+    assert len(records) == 2
+    assert records[0]["card_id"] == "hedge_fund"
+    assert records[1]["card_id"] == "hedge_fund"
+
+
+def test_expand_field_inputs_isolate_fields_for_deterministic_routing():
+    """Each CardState from expansion has exactly one non-empty source field.
+
+    rule CardState: en_rule non-empty, en_flavor must be empty so the
+    conditional edge routes deterministically to process_rule — not to
+    process_rule because rule takes priority over a non-empty en_flavor.
+    """
+    card = {
+        "id": "hedge_fund",
+        "en_text": "Gain 9[credit].",
+        "en_flavor": "All that glitters...",
+    }
+    inputs = expand_card_to_field_inputs(card)
+    assert len(inputs) == 2
+    rule_input, flavor_input = inputs
+    # Rule input: only en_rule set
+    assert rule_input["en_rule"] == "Gain 9[credit]."
+    assert (rule_input.get("en_flavor") or "").strip() == ""
+    # Flavor input: only en_flavor set
+    assert flavor_input["en_flavor"] == "All that glitters..."
+    assert (flavor_input.get("en_rule") or "").strip() == ""
 
 
 # ===========================================================================

@@ -1034,8 +1034,12 @@ def test_interrupt_payload_contains_source_text_and_draft(small_tm_index, small_
 
 
 def test_interrupt_fires_for_new_term_trigger(small_tm_index):
-    """Trigger ①: 신규 EN 용어 발견 — interrupt() must fire via review_queue."""
-    # Empty glossary → every EN content word is a new term
+    """Trigger ①: 신규 EN 용어 발견 (blocking type b) — interrupt() must fire via review_queue.
+
+    AC4: only BLOCKING-type new terms trigger interrupt.  "Frobbulate" is non-sentence-first
+    uppercase after "Install " → blocking type (b) → interrupt fires.  Empty glossary ensures
+    "Frobbulate" is unregistered.
+    """
     flat: "GlossaryFlat" = {}
     graph = build_translation_graph(
         tm_index=small_tm_index,
@@ -1044,7 +1048,8 @@ def test_interrupt_fires_for_new_term_trigger(small_tm_index):
         llm=_MockLLM("프로그램을 설치한다."),
         conflict_entries=[],
     )
-    result = graph.invoke({"card_id": "card_new_term", "en_rule": "Frobbulate a program."})
+    # "Frobbulate" appears after "Install " → non-sentence-first, uppercase → blocking type (b)
+    result = graph.invoke({"card_id": "card_new_term", "en_rule": "Install Frobbulate."})
     assert "__interrupt__" in result
 
 
@@ -1254,19 +1259,24 @@ def test_glossary_unchanged_after_approval(small_tm_index, small_glossary, tmp_p
 
 
 def test_new_term_candidate_written_on_new_term_violation(small_tm_index, tmp_path):
-    """New term violation in interrupt → new_term_candidates.json written after approval."""
+    """Blocking new term violation in interrupt → new_term_candidates.json written after approval.
+
+    AC4: blocking type (b) — "Gordian" is non-sentence-first uppercase → triggers interrupt.
+    After approval, the blocking new term is written to new_term_candidates.json.
+    Note: recording-type terms (lowercase/sentence-first) are written at detection time
+    without requiring approval.
+    """
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.types import Command
     from approved_store import load_new_term_candidates
 
-    # Empty glossary → every content word is a new term
     flat: GlossaryFlat = {}
     cand_path = tmp_path / "new_term_candidates.json"
     graph = build_translation_graph(
         tm_index=small_tm_index,
         flat_glossary=flat,
         llm_judged=True,
-        llm=_MockLLM("프로그램을 설치한다."),
+        llm=_MockLLM("고르디안을 설치한다."),
         conflict_entries=[],
         checkpointer=MemorySaver(),
         approved_store_path=tmp_path / "approved.jsonl",
@@ -1274,7 +1284,8 @@ def test_new_term_candidate_written_on_new_term_violation(small_tm_index, tmp_pa
     )
     config = {"configurable": {"thread_id": "ac5_newterm_test"}}
 
-    result1 = graph.invoke({"card_id": "card_new_term", "en_rule": "Install a program."}, config=config)
+    # "Gordian" is non-sentence-first uppercase → blocking type (b) → interrupt
+    result1 = graph.invoke({"card_id": "card_new_term", "en_rule": "Install Gordian."}, config=config)
     assert "__interrupt__" in result1
 
     graph.invoke(Command(resume="approved"), config=config)
@@ -1282,8 +1293,8 @@ def test_new_term_candidate_written_on_new_term_violation(small_tm_index, tmp_pa
     candidates = load_new_term_candidates(cand_path)
     assert len(candidates) > 0
     submitted_terms = [c.en_term for c in candidates]
-    # "Install" or "program" must appear (these are new EN terms not in empty glossary)
-    assert any(t.lower() in ("install", "program") for t in submitted_terms)
+    # "gordian" must appear (blocking type (b) → written after approval)
+    assert any(t.lower() == "gordian" for t in submitted_terms)
     # All candidates reference the source card
     assert all(c.source_card_id == "card_new_term" for c in candidates)
 
@@ -1523,17 +1534,18 @@ def test_state_new_terms_field_contains_en_ko_rendering_pairs(small_tm_index, tm
     new_term_identity = (EN_term_not_in_glossary, ko_rendering_used_in_draft).
 
     This test fails if _review_queue never populates new_terms, or uses the wrong key names.
+    AC4: "Gordian" is non-sentence-first uppercase (blocking type b) → interrupt.
     """
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.types import Command
 
-    # Empty glossary → all content words are new terms.
+    # Empty glossary → blocking type (b): non-sentence-first uppercase token "Gordian"
     flat: GlossaryFlat = {}
     graph = build_translation_graph(
         tm_index=small_tm_index,
         flat_glossary=flat,
         llm_judged=True,
-        llm=_MockLLM("프로그램을 설치한다."),
+        llm=_MockLLM("고르디안을 설치한다."),
         conflict_entries=[],
         checkpointer=MemorySaver(),
         approved_store_path=tmp_path / "approved.jsonl",
@@ -1541,9 +1553,10 @@ def test_state_new_terms_field_contains_en_ko_rendering_pairs(small_tm_index, tm
     )
     config = {"configurable": {"thread_id": "ac5_newterms_state"}}
 
-    result1 = graph.invoke({"card_id": "card_new_term", "en_rule": "Install a program."}, config=config)
+    # "Gordian" is non-sentence-first uppercase → blocking type (b) → interrupt
+    result1 = graph.invoke({"card_id": "card_new_term", "en_rule": "Install Gordian."}, config=config)
     assert "__interrupt__" in result1, (
-        "Expected interrupt for new term: empty glossary flags all content words"
+        "Expected interrupt for new term: 'Gordian' is non-sentence-first uppercase (blocking type b)"
     )
 
     result2 = graph.invoke(Command(resume="approved"), config=config)
@@ -1558,8 +1571,8 @@ def test_state_new_terms_field_contains_en_ko_rendering_pairs(small_tm_index, tm
         assert "en" in pair, f"new_term_identity pair must have 'en' key: {pair}"
         assert "ko_rendering" in pair, f"new_term_identity pair must have 'ko_rendering' key: {pair}"
     en_set = {p["en"].lower() for p in new_terms}
-    assert "install" in en_set or "program" in en_set, (
-        f"Expected 'install' or 'program' in new_terms (empty glossary, source='Install a program.'): {en_set}"
+    assert "gordian" in en_set, (
+        f"Expected 'gordian' in new_terms (blocking type b, source='Install Gordian.'): {en_set}"
     )
 
 

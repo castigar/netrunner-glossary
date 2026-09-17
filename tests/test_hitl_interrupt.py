@@ -241,9 +241,11 @@ class TestCheckHITLTriggers:
     # ------------------------------------------------------------------
 
     def test_trigger_new_term_fires_for_unregistered_term(self):
+        # AC4: blocking type (b) — "Frobbulate" is non-sentence-first uppercase →
+        # triggers interrupt.  "install" is in glossary so it's registered.
         glossary = {"install": ("설치", "extracted")}
         result = check_hitl_triggers(
-            "Frobbulate a program.",
+            "Install Frobbulate.",
             "프로그램을 설치한다.",
             glossary=glossary,
             llm_judged=True,
@@ -253,9 +255,11 @@ class TestCheckHITLTriggers:
         assert InterruptReason.NEW_TERM in reasons
 
     def test_trigger_new_term_includes_term_list(self):
+        # AC4: blocking type (b) — "Frobbulate" appears after "Run " (non-sentence-first
+        # uppercase) and is unregistered → triggers interrupt with en_term in detail.
         glossary = {}
         result = check_hitl_triggers(
-            "Frobbulate the runner.",
+            "Run Frobbulate the runner.",
             "러너를 공격한다.",
             glossary=glossary,
             llm_judged=True,
@@ -481,11 +485,15 @@ class TestCheckHITLTriggers:
     # ------------------------------------------------------------------
 
     def test_multiple_triggers_can_fire(self):
-        """New term + rule violation can both fire at once."""
+        """New term + rule violation can both fire at once.
+
+        AC4: "Frobbulate" is non-sentence-first uppercase → blocking type (b) → NEW_TERM.
+        "trash" is in glossary but KO uses wrong rendering "파기" → RULE_VIOLATION.
+        """
         glossary = {"trash": ("폐기", "extracted")}
         result = check_hitl_triggers(
-            "Frobbulate the trash program.",
-            "카드를 파기한다.",  # wrong translation
+            "Trash Frobbulate program.",
+            "카드를 파기한다.",  # wrong: should be '폐기' not '파기'
             glossary=glossary,
             llm_judged=True,
         )
@@ -520,17 +528,19 @@ class TestCheckHITLTriggers:
 
 class TestHITLInterrupt:
     def test_raises_with_result(self):
+        # AC4: "Frobbulate" is non-sentence-first uppercase → blocking type (b) → interrupt fires.
         glossary = {}
         result = check_hitl_triggers(
-            "Frobbulate.", "설치.", glossary=glossary, llm_judged=True
+            "Run Frobbulate.", "설치.", glossary=glossary, llm_judged=True
         )
         exc = HITLInterrupt(result)
         assert exc.result is result
 
     def test_exception_message_names_reasons(self):
+        # AC4: blocking-type new term triggers NEW_TERM reason in exception message.
         glossary = {}
         result = check_hitl_triggers(
-            "Frobbulate.", "설치.", glossary=glossary, llm_judged=True
+            "Run Frobbulate.", "설치.", glossary=glossary, llm_judged=True
         )
         exc = HITLInterrupt(result)
         assert "new_term" in str(exc)
@@ -538,14 +548,15 @@ class TestHITLInterrupt:
     def test_inherits_exception(self):
         glossary = {}
         result = check_hitl_triggers(
-            "Frobbulate.", "설치.", glossary=glossary, llm_judged=True
+            "Run Frobbulate.", "설치.", glossary=glossary, llm_judged=True
         )
         assert isinstance(HITLInterrupt(result), Exception)
 
     def test_can_be_raised_and_caught(self):
+        # AC4: blocking-type new term → should_interrupt=True → HITLInterrupt raised.
         glossary = {}
         result = check_hitl_triggers(
-            "Frobbulate.", "설치.", glossary=glossary, llm_judged=True
+            "Run Frobbulate.", "설치.", glossary=glossary, llm_judged=True
         )
         with pytest.raises(HITLInterrupt) as exc_info:
             if result.should_interrupt:

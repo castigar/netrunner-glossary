@@ -5,15 +5,31 @@ SERVICE.md §4, rule 3:
   EN terms in the source text that are not registered require HITL approval.
 
 HITL trigger ①: 신규 EN 용어 발견 (new EN term discovered in source text).
-Unregistered significant EN terms block the translation; callers invoke interrupt().
+  Blocking terms trigger interrupt(); recording terms are stored without stopping
+  the pipeline.
+
+Blocking terms (two types only — AC4):
+  (a) en_keywords (card subtypes) items not registered in the glossary.
+  (b) Non-sentence-first, uppercase-starting, unregistered tokens in rule text.
+      These identify referenced card names / proper nouns.
+
+Recording terms: all other unregistered tokens — stored at detection time in
+new_term_candidates.json and in the draft record, but pipeline continues.
+
+Markup tags: <strong>, <em>, <trace> etc. are not words; their tag names must
+NOT be tokenized.  Strip HTML tags before tokenizing (fix for the defect where
+the tokenizer extracted 'strong' from '<strong>').
+
+Classification is done here; blocking determination is done by hitl_interrupt.
 
 Usage::
 
     glossary, llm_judged = load_flat_glossary(path)
-    result = check_new_terms(en_text, glossary, llm_judged)
-    if not result.passed:
-        # Caller invokes interrupt() with result.new_terms as the payload.
+    result = check_new_terms(en_text, glossary, llm_judged, en_keywords=card_en_keywords)
+    if result.blocking_new_terms:
+        # Caller invokes interrupt() for blocking terms.
         raise NewTermError(result)
+    # result.recording_new_terms → write to new_term_candidates.json at detection time.
 """
 from __future__ import annotations
 
@@ -65,12 +81,42 @@ _STOPWORDS: frozenset[str] = frozenset({
     "text",
 })
 
+# Markup tag stripper: remove <tag> and </tag> patterns before tokenizing.
+# This prevents tag names (strong, em, trace) from being extracted as tokens.
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
 # Tokenize: words (possibly hyphenated) or game symbols [...].
-# Strips <markup> tags by matching only word characters and hyphens.
+# Applied AFTER markup stripping so tag names are never candidates.
 _TOKEN_RE = re.compile(r"\[[^\]]+\]|[a-zA-Z][a-zA-Z'-]*[a-zA-Z]|[a-zA-Z]")
+
+# Sentence-ending punctuation — a token immediately after these is sentence-first.
+_SENTENCE_END = frozenset(".!?")
 
 # Minimum word length to consider (anything shorter is noise).
 _MIN_LEN = 3
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _strip_markup(text: str) -> str:
+    """Remove HTML/markup tags, replacing with a space to preserve word boundaries."""
+    return _HTML_TAG_RE.sub(" ", text)
+
+
+def _is_sentence_start(stripped_text: str, match_start: int) -> bool:
+    """Return True if the token at *match_start* opens a sentence.
+
+    A token is sentence-first when:
+      - it is the very first token in the text (no preceding non-whitespace), OR
+      - the last non-whitespace character before it is a sentence-ending mark.
+    """
+    pre = stripped_text[:match_start].rstrip()
+    if not pre:
+        return True
+    return pre[-1] in _SENTENCE_END
 
 
 # ---------------------------------------------------------------------------
@@ -85,10 +131,30 @@ class NewTermCandidate(BaseModel):
 
 
 class NewTermCheckResult(BaseModel):
-    """Result of the new term guardrail check."""
+    """Result of the new term guardrail check.
 
-    passed: bool = Field(description="True only when no unregistered significant terms found")
-    new_terms: list[NewTermCandidate] = Field(default_factory=list)
+    Classification (AC4):
+      blocking_new_terms: terms that must trigger HITL interrupt.
+      recording_new_terms: terms to record at detection time without stopping pipeline.
+      new_terms: ALL unregistered terms (= blocking + recording), kept for backward compat.
+      passed: True only when NO unregistered terms at all (blocking or recording).
+    """
+
+    passed: bool = Field(
+        description="True only when no unregistered significant terms found (blocking or recording)"
+    )
+    new_terms: list[NewTermCandidate] = Field(
+        default_factory=list,
+        description="All unregistered terms (blocking + recording) — backward compat",
+    )
+    blocking_new_terms: list[NewTermCandidate] = Field(
+        default_factory=list,
+        description="Terms that trigger HITL interrupt (en_keywords unregistered, or non-sentence-first uppercase)",
+    )
+    recording_new_terms: list[NewTermCandidate] = Field(
+        default_factory=list,
+        description="Unregistered terms to record at detection time without interrupting",
+    )
     llm_judged: bool = Field(
         description=(
             "Whether the 'extracted' glossary section has been LLM-validated. "
@@ -123,25 +189,36 @@ def check_new_terms(
     en_text: str,
     glossary: GlossaryFlat,
     llm_judged: bool,
+    *,
+    en_keywords: list[str] | None = None,
+    route: str = "rule",
 ) -> NewTermCheckResult:
     """Detect EN terms in *en_text* that are not registered in *glossary*.
 
-    Tokenizes the source, filters stopwords and short words, then checks the
-    remaining content words against all glossary keys (unigrams and the
-    multi-word phrases registered as single keys).  Any token absent from the
-    glossary is flagged as a new-term candidate requiring HITL approval.
+    Strips HTML markup tags first (fixes the defect where tag names like 'strong'
+    were extracted as tokens).  Tokenizes the stripped text, filters stopwords and
+    short words, then checks the remaining content words against all glossary keys.
 
-    Tokens that appear as components of a registered multi-word phrase are
-    considered covered and are NOT flagged individually.
+    Classification (AC4):
+      Blocking (triggers interrupt):
+        (a) Items in *en_keywords* (card subtypes) not in the glossary.
+        (b) Tokens that start with an uppercase letter, are NOT at a sentence-start
+            position, and are not registered — identifies referenced card names /
+            proper nouns.  Only checked when route == "rule".
+      Recording (store at detection time, no interrupt):
+        All other unregistered tokens (lowercase, or sentence-first, etc.).
 
     Args:
-        en_text:    Source English card text (rule or flavour).
-        glossary:   Flat glossary from :func:`glossary_guard.load_flat_glossary`.
-        llm_judged: Whether the extracted section has been LLM-validated;
-                    propagated to the result for callers to inspect.
+        en_text:     Source English card text (rule or flavour).
+        glossary:    Flat glossary from :func:`glossary_guard.load_flat_glossary`.
+        llm_judged:  Whether the extracted section has been LLM-validated;
+                     propagated to the result for callers to inspect.
+        en_keywords: Card subtype keywords (e.g. ["Icebreaker", "Barrier"]).
+                     Items not in the glossary are blocking-type (a).
+        route:       "rule" or "flavor".  Blocking type (b) only applies to "rule".
 
     Returns:
-        :class:`NewTermCheckResult` — ``passed=True`` only when no new terms.
+        :class:`NewTermCheckResult` with blocking/recording classification.
     """
     # Build a set of ALL words that appear in any registered glossary phrase.
     # A unigram already covered by a multi-word entry is NOT a new term.
@@ -150,13 +227,31 @@ def check_new_terms(
         for word in key.split():
             covered_words.add(word)
 
-    seen: set[str] = set()
-    new_terms: list[NewTermCandidate] = []
+    # (a) Blocking: unregistered items in en_keywords (card subtypes).
+    blocking_seen: set[str] = set()
+    blocking_new_terms: list[NewTermCandidate] = []
+    if en_keywords:
+        for kw in en_keywords:
+            kw_norm = kw.strip().lower()
+            if not kw_norm or len(kw_norm) < _MIN_LEN:
+                continue
+            if kw_norm in glossary or kw_norm in covered_words:
+                continue
+            if kw_norm not in blocking_seen:
+                blocking_seen.add(kw_norm)
+                blocking_new_terms.append(NewTermCandidate(en_term=kw_norm))
 
-    for raw in _TOKEN_RE.findall(en_text):
+    # Tokenize the markup-stripped text for text-token classification.
+    stripped = _strip_markup(en_text)
+
+    seen: set[str] = set()
+    recording_new_terms: list[NewTermCandidate] = []
+
+    for m in _TOKEN_RE.finditer(stripped):
+        raw = m.group(0)
         token = raw.lower()
 
-        # Game symbols like [credit] are data, not terms
+        # Game symbols like [credit] are data, not terms.
         if token.startswith("["):
             continue
 
@@ -166,22 +261,29 @@ def check_new_terms(
         if token in _STOPWORDS:
             continue
 
-        if token in seen:
+        if token in seen or token in blocking_seen:
             continue
+
+        # Already registered as a standalone key or covered by a multi-word phrase.
+        if token in glossary or token in covered_words:
+            continue
+
         seen.add(token)
 
-        # Already registered as a standalone key
-        if token in glossary:
-            continue
+        # (b) Blocking: non-sentence-first, uppercase-starting, unregistered token
+        #     in rule text — identifies referenced card names / proper nouns.
+        if route == "rule" and raw[0].isupper() and not _is_sentence_start(stripped, m.start()):
+            blocking_seen.add(token)
+            blocking_new_terms.append(NewTermCandidate(en_term=token))
+        else:
+            recording_new_terms.append(NewTermCandidate(en_term=token))
 
-        # Part of a registered multi-word phrase — covered
-        if token in covered_words:
-            continue
-
-        new_terms.append(NewTermCandidate(en_term=token))
+    all_new_terms = blocking_new_terms + recording_new_terms
 
     return NewTermCheckResult(
-        passed=len(new_terms) == 0,
-        new_terms=new_terms,
+        passed=len(all_new_terms) == 0,
+        new_terms=all_new_terms,
+        blocking_new_terms=blocking_new_terms,
+        recording_new_terms=recording_new_terms,
         llm_judged=llm_judged,
     )

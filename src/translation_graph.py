@@ -68,7 +68,9 @@ def _apply_guard_projections(
     conflict_entries: list[dict],
     tm_confidence: float | None = None,
     tm_threshold: float | None = None,
-) -> list[dict]:
+    en_keywords: list[str] | None = None,
+    route: str = "rule",
+) -> tuple[list[dict], list[str]]:
     """Single adapter that maps DraftRecord field projections to guard calls.
 
     Guard-input projection mapping (guard_input_projection ontology concept):
@@ -81,6 +83,11 @@ def _apply_guard_projections(
     Each guard is imported and called here — not reimplemented.  Calling a
     guard without declaring its projection in this adapter does not count as
     calling it (wiring_vs_reimplementation constraint).
+
+    AC4 (new_term_blocking_boundary): trigger ① fires ONLY for blocking-type new
+    terms.  Recording-type new terms are returned separately so the validate_draft
+    node can write them to new_term_candidates.json at detection time without
+    interrupting the pipeline.
 
     Args:
         en_source:       EN source text (text or flavor field, already stripped).
@@ -101,12 +108,13 @@ def _apply_guard_projections(
                          back to TM_THRESHOLD env var then to _DEFAULT_TM_THRESHOLD.
                          Callers (build_translation_graph) should always pass the
                          run-time-derived value to satisfy AC4.
+        en_keywords:     Card subtype keywords for blocking type (a) detection (AC4).
+        route:           "rule" or "flavor"; passed to new_term_guard for type (b).
 
     Returns:
-        List of violation dicts, each with at least:
-          - ``guard``: str  — which guard fired
-          - ``detail`` or ``matches``: structured reason data
-        Empty list when all guards pass.
+        (violations, recording_new_terms) where:
+          violations: list of violation dicts (each with ``guard`` + detail)
+          recording_new_terms: EN terms to store at detection time (no interrupt)
     """
     violations: list[dict] = []
 
@@ -124,7 +132,7 @@ def _apply_guard_projections(
     #   fidelity_guard:   (en_source, draft_ko)
     #   glossary_guard:   (draft_ko, injected_terms)  — injected_terms pre-filter
     #                     means glossary check covers exactly the injected terms
-    #   new_term_guard:   (en_source, draft_ko, glossary)
+    #   new_term_guard:   (en_source, draft_ko, glossary, en_keywords, route)
     #   conflict_guard:   (draft_ko, injected_terms, conflicts) — injected EN
     #                     terms used to identify which sourced terms conflict
     hitl_result = check_hitl_triggers(
@@ -135,6 +143,8 @@ def _apply_guard_projections(
         conflict_entries=conflict_entries,
         tm_top_score=tm_confidence,
         tm_threshold=tm_threshold,
+        en_keywords=en_keywords,
+        route=route,
     )
     for trigger in hitl_result.triggers:
         violations.append({
@@ -142,7 +152,7 @@ def _apply_guard_projections(
             "detail": trigger.detail,
         })
 
-    return violations
+    return violations, hitl_result.recording_new_terms
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +166,7 @@ class CardState(TypedDict, total=False):
     card_id: str
     en_rule: str       # source EN rule text  (card["text"])
     en_flavor: str     # source EN flavor text (card["flavor"])
+    en_keywords: list[str]  # card subtype keywords for blocking-type new term check (AC4)
     text_type: Literal["rule", "flavor"]   # set by the routing node
     # AC2 fields: draft generation outputs — draft_record_contract (SERVICE.md §6)
     draft_ko: str                 # draft Korean translation
@@ -167,6 +178,8 @@ class CardState(TypedDict, total=False):
     guard_passed: bool               # True when all 5 guards pass
     guard_violations: list           # list of violation dicts from failed guards
     needs_review: bool               # True when card is routed to review queue
+    # AC4 fields: recording-type new terms (stored at detection time, no interrupt)
+    recording_new_terms: list[str]   # EN terms written to new_term_candidates.json at detection time
     # AC5 fields: post-approval storage outputs
     approved_ko: str                 # final approved Korean translation (post-interrupt)
     new_terms: list[dict]            # new_term_identity pairs: [{en, ko_rendering}] (AC5)
@@ -219,6 +232,7 @@ def expand_card_to_field_inputs(card: dict) -> list[CardState]:
     card_id = card.get("id", "")
     en_text = (card.get("en_text") or "").strip()
     en_flavor = (card.get("en_flavor") or "").strip()
+    en_keywords: list[str] = card.get("en_keywords") or []
 
     inputs: list[CardState] = []
 
@@ -227,6 +241,7 @@ def expand_card_to_field_inputs(card: dict) -> list[CardState]:
             "card_id": card_id,
             "en_rule": en_text,
             "en_flavor": "",  # isolate rule field so routing is deterministic
+            "en_keywords": en_keywords,
         })
 
     if en_flavor:
@@ -234,6 +249,7 @@ def expand_card_to_field_inputs(card: dict) -> list[CardState]:
             "card_id": card_id,
             "en_rule": "",  # isolate flavor field so routing is deterministic
             "en_flavor": en_flavor,
+            "en_keywords": en_keywords,
         })
 
     return inputs
@@ -425,6 +441,7 @@ def _make_validate_node(
     llm_judged: bool,
     conflict_entries: list[dict],
     tm_threshold: float | None = None,
+    new_term_candidates_path: Path | str = "new_term_candidates.json",
 ) -> Callable[[CardState], CardState]:
     """Return a node that validates the draft with all 5 guardrails.
 
@@ -433,12 +450,17 @@ def _make_validate_node(
 
     Guards called via the adapter (existing modules, not re-implemented):
       1. injection_guard   — projection: (en_source, draft_ko)
-      2. new_term_guard    — projection: (en_source, draft_ko, glossary)
+      2. new_term_guard    — projection: (en_source, draft_ko, glossary, en_keywords, route)
       3. conflict_guard    — projection: (draft_ko, injected_terms, conflicts)
       4. glossary_guard    — projection: (draft_ko, injected_terms)
       5. fidelity_guard    — projection: (en_source, draft_ko)
 
-    Failed items set needs_review=True and are routed to review_queue.
+    AC4: Recording-type new terms (non-blocking) are written to
+    new_term_candidates.json at detection time and stored in state.recording_new_terms.
+    They do not cause needs_review=True.
+
+    Failed items (from blocking triggers) set needs_review=True and are routed
+    to review_queue.
     """
 
     def _validate_draft(state: CardState) -> CardState:
@@ -451,10 +473,17 @@ def _make_validate_node(
 
         # No draft to validate (stub mode or empty source)
         if not draft_ko:
-            return {**state, "guard_passed": True, "guard_violations": [], "needs_review": False}
+            return {
+                **state,
+                "guard_passed": True,
+                "guard_violations": [],
+                "needs_review": False,
+                "recording_new_terms": [],
+            }
 
         # All 5 guards applied through the projection adapter.
-        violations = _apply_guard_projections(
+        # _apply_guard_projections returns (violations, recording_new_terms).
+        violations, recording_terms = _apply_guard_projections(
             en_source=source_text,
             draft_ko=draft_ko,
             injected_terms=state.get("injected_terms") or [],
@@ -463,14 +492,33 @@ def _make_validate_node(
             conflict_entries=conflict_entries,
             tm_confidence=state.get("tm_confidence"),
             tm_threshold=tm_threshold,
+            en_keywords=state.get("en_keywords") or [],
+            route=text_type,
         )
         guard_passed = len(violations) == 0
+
+        # AC4: Write recording-type new terms to store at detection time.
+        # These are NOT blocking — pipeline continues without interrupt.
+        if recording_terms:
+            from approved_store import NewTermCandidateRecord, append_new_term_candidate
+            field_name = "text" if text_type == "rule" else "flavor"
+            card_id = state.get("card_id", "")
+            for en_term in recording_terms:
+                candidate = NewTermCandidateRecord(
+                    en_term=en_term,
+                    ko_rendering="",  # unknown at detection time
+                    source_card_id=card_id,
+                    source_field=field_name,
+                    approved_ko_context=draft_ko,
+                )
+                append_new_term_candidate(candidate, store_path=new_term_candidates_path)
 
         return {
             **state,
             "guard_passed": guard_passed,
             "guard_violations": violations,
             "needs_review": not guard_passed,
+            "recording_new_terms": recording_terms,
         }
 
     return _validate_draft
@@ -688,7 +736,11 @@ def build_translation_graph(
     # AC3: guard validation node
     if flat_glossary is not None:
         validate_node = _make_validate_node(
-            flat_glossary, llm_judged, conflict_entries or [], tm_threshold=tm_threshold
+            flat_glossary,
+            llm_judged,
+            conflict_entries or [],
+            tm_threshold=tm_threshold,
+            new_term_candidates_path=new_term_candidates_path,
         )
     else:
         validate_node = validate_draft  # stub

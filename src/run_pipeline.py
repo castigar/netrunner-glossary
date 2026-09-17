@@ -208,6 +208,7 @@ def _state_to_draft_record(state: CardState) -> dict:
         "tm_confidence": state.get("tm_confidence", 0.0),
         "glossary_llm_judged": state.get("glossary_llm_judged", False),
         "new_terms": new_terms,  # AC5: new_term_identity pairs (en, ko_rendering)
+        "recording_new_terms": state.get("recording_new_terms") or [],  # AC4: stored at detection time
     }
     # AC3: preserve guard violation details (which guard, why) in interrupted records.
     # guard_violations is set by validate_draft and carries {guard, detail|matches} per entry.
@@ -231,6 +232,8 @@ def run_pipeline(
     llm_model: str | None = None,
     tm_threshold_percentile: float = 20.0,
     eval_autoresume: bool = False,
+    approved_store_path: Path | str | None = None,
+    new_term_candidates_path: Path | str | None = None,
 ) -> list[dict]:
     """Wire the full pipeline and run it on *n_cards* from hold_out.json.
 
@@ -243,7 +246,13 @@ def run_pipeline(
             for every interrupted card without consulting hold-out ko_text.
             An eval_autoresume_header is written to the output with HITL stats.
             Predictions are NOT human-approved (is_human_approved=False always).
+        approved_store_path: Path to approved.jsonl. Defaults to output_path.parent / "approved.jsonl".
+        new_term_candidates_path: Path to new_term_candidates.json. Defaults to output_path.parent / "new_term_candidates.json".
     """
+    if approved_store_path is None:
+        approved_store_path = output_path.parent / "approved.jsonl"
+    if new_term_candidates_path is None:
+        new_term_candidates_path = output_path.parent / "new_term_candidates.json"
     glossary_path = assets_dir / "glossary.json"
     conflicts_path = assets_dir / "conflicts.json"
     train_path = data_dir / "train.json"
@@ -310,6 +319,8 @@ def run_pipeline(
         conflict_entries=conflict_entries,
         tm_threshold=tm_threshold,
         checkpointer=checkpointer,
+        approved_store_path=approved_store_path,
+        new_term_candidates_path=new_term_candidates_path,
     )
     print("[run_pipeline] translation graph compiled")
 

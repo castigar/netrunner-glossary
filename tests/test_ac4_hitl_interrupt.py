@@ -101,7 +101,12 @@ def test_interrupt_fires_for_fidelity_violation(small_tm_index, small_glossary):
 
 
 def test_interrupt_fires_for_new_term_trigger(small_tm_index):
-    """Trigger ①: 신규 EN 용어 — empty glossary makes every content word new."""
+    """Trigger ①: 신규 EN 용어 (blocking type b) → graph reaches __interrupt__ state.
+
+    AC4 blocking type (b): non-sentence-first, uppercase-starting, unregistered token
+    in rule text.  "Frobbulate" appears after "Install " → non-sentence-first uppercase
+    → blocking type → interrupt fires.  With empty glossary, "Frobbulate" is unregistered.
+    """
     flat: GlossaryFlat = {}
     graph = build_translation_graph(
         tm_index=small_tm_index,
@@ -110,8 +115,12 @@ def test_interrupt_fires_for_new_term_trigger(small_tm_index):
         llm=_MockLLM("프로그램을 설치한다."),
         conflict_entries=[],
     )
-    result = graph.invoke({"card_id": "new_term_card", "en_rule": "Frobbulate a program."})
-    assert "__interrupt__" in result, "new_term trigger must fire interrupt()"
+    result = graph.invoke({"card_id": "new_term_card", "en_rule": "Install Frobbulate."})
+    assert "__interrupt__" in result, (
+        "new_term trigger (blocking type b: non-sentence-first uppercase) must fire interrupt() — "
+        "'__interrupt__' absent from result. Remove the interrupt() call site in review_queue "
+        "to reproduce this failure."
+    )
 
 
 def test_interrupt_fires_for_conflict_trigger(small_tm_index, small_glossary):
@@ -444,3 +453,148 @@ def test_run_pipeline_writes_threshold_derivation_to_output(tmp_path):
     assert derivation["n_cards"] > 0, (
         f"n_cards must be > 0 — threshold must come from measured scores; got {derivation['n_cards']}"
     )
+
+
+# ===========================================================================
+# Part 5: AC4 Bidirectional blocking/recording boundary verification
+#
+# AC4 requires tests for BOTH directions of the new_term_blocking_boundary:
+#   (a) Card with blocking-type token → __interrupt__ state
+#   (b) Card with ONLY recording-type tokens → no interrupt + token in new_term_candidates.json
+# ===========================================================================
+
+
+def test_blocking_type_en_keyword_unregistered_fires_interrupt(small_tm_index):
+    """Blocking type (a): unregistered en_keyword (card subtype) → __interrupt__.
+
+    If a card's en_keywords contains a subtype not in the glossary, the graph
+    must reach __interrupt__.  This test fails if new_term_guard stops classifying
+    en_keywords as blocking, or if hitl_interrupt stops using blocking_new_terms.
+    """
+    flat: GlossaryFlat = {}  # empty glossary → en_keyword is unregistered
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=True,
+        llm=_MockLLM("런을 종료한다."),
+        conflict_entries=[],
+        tm_threshold=0.0,  # disable trigger ④ so only new_term fires
+    )
+    result = graph.invoke({
+        "card_id": "barrier_ice",
+        "en_rule": "End the run.",
+        "en_keywords": ["Barrier"],  # "Barrier" not in glossary → blocking type (a)
+    })
+    assert "__interrupt__" in result, (
+        "Unregistered en_keyword 'Barrier' must trigger interrupt() via blocking type (a). "
+        "Removing en_keywords classification from new_term_guard would cause this failure."
+    )
+
+
+def test_blocking_type_b_non_sentence_first_uppercase_fires_interrupt(small_tm_index):
+    """Blocking type (b): non-sentence-first uppercase unregistered token → __interrupt__.
+
+    A card-name-like token that appears after the first word (non-sentence-first)
+    and starts uppercase identifies a referenced card name / proper noun.
+    The graph must reach __interrupt__ for such tokens.
+    """
+    flat: GlossaryFlat = {}  # empty glossary
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=True,
+        llm=_MockLLM("설치한다."),
+        conflict_entries=[],
+        tm_threshold=0.0,
+    )
+    # "Gordian" appears after "Install " → non-sentence-first, uppercase → blocking type (b)
+    result = graph.invoke({"card_id": "gordian_blade", "en_rule": "Install Gordian."})
+    assert "__interrupt__" in result, (
+        "Non-sentence-first uppercase unregistered token 'Gordian' must trigger interrupt() "
+        "via blocking type (b).  Removing _is_sentence_start logic from new_term_guard "
+        "would break this test."
+    )
+
+
+def test_recording_type_only_passes_through_and_is_stored(small_tm_index, tmp_path):
+    """Recording-type tokens (lowercase / sentence-first): no interrupt + stored at detection time.
+
+    AC4: recording-type unregistered tokens must NOT stop the pipeline.
+    They are written to new_term_candidates.json at detection time (탐지 시점에 적재).
+
+    This test fails if:
+      - recording-type tokens incorrectly trigger interrupt(), OR
+      - recording-type tokens are NOT written to new_term_candidates.json.
+    """
+    import json
+
+    flat: GlossaryFlat = {"run": ("런", "official")}  # only "run" registered
+    candidates_path = tmp_path / "new_term_candidates.json"
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=True,
+        llm=_MockLLM("런을 종료한다."),
+        conflict_entries=[],
+        tm_threshold=0.0,  # disable trigger ④
+        new_term_candidates_path=candidates_path,
+    )
+    # "frobbulate" (lowercase, recording-type) — sentence-first has no effect here since lowercase
+    # "program" (lowercase, recording-type)
+    # Neither is blocking-type → pipeline must pass through without interrupt.
+    result = graph.invoke({
+        "card_id": "clean_card",
+        "en_rule": "Frobbulate a program.",  # lowercase start-of-sentence words → recording
+    })
+    assert "__interrupt__" not in result, (
+        "Recording-type tokens (lowercase) must NOT trigger interrupt(). "
+        "If this fails, check_new_terms is incorrectly classifying lowercase tokens as blocking."
+    )
+
+    # Recording terms must be written to new_term_candidates.json at detection time.
+    assert candidates_path.exists(), (
+        "new_term_candidates.json must exist after processing a card with recording-type tokens."
+    )
+    candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
+    candidate_terms = {c["en_term"] for c in candidates}
+    # "frobbulate" (sentence-first lowercase) and "program" (lowercase) are recording-type.
+    assert "frobbulate" in candidate_terms or "program" in candidate_terms, (
+        f"Recording-type unregistered terms must be in new_term_candidates.json; "
+        f"found: {candidate_terms}"
+    )
+
+
+def test_sentence_first_uppercase_is_recording_not_blocking(small_tm_index, tmp_path):
+    """Sentence-first uppercase tokens are recording-type, not blocking.
+
+    AC4: only NON-sentence-first uppercase tokens are blocking type (b).
+    A sentence-first uppercase token (normal sentence start) must NOT trigger interrupt.
+    """
+    import json
+
+    flat: GlossaryFlat = {}
+    candidates_path = tmp_path / "new_term_candidates.json"
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=True,
+        llm=_MockLLM("런을 종료한다."),
+        conflict_entries=[],
+        tm_threshold=0.0,
+        new_term_candidates_path=candidates_path,
+    )
+    # "Frobbulate" is the FIRST word of the sentence → sentence-first uppercase → recording only.
+    result = graph.invoke({
+        "card_id": "sentence_start_card",
+        "en_rule": "Frobbulate a program.",
+    })
+    assert "__interrupt__" not in result, (
+        "Sentence-first uppercase token 'Frobbulate' must NOT trigger interrupt() — "
+        "it is recording-type, not blocking type (b).  Only non-sentence-first uppercase "
+        "tokens are blocking."
+    )
+    # It should be recorded though.
+    if candidates_path.exists():
+        candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
+        # "frobbulate" may appear as recording-type (depending on other triggers)
+        # The key assertion is that no interrupt fired — presence in candidates is a bonus.

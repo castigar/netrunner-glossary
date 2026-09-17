@@ -60,6 +60,14 @@ class HITLInterruptResult(BaseModel):
         default_factory=list,
         description="The triggers that fired; empty when should_interrupt is False",
     )
+    recording_new_terms: list[str] = Field(
+        default_factory=list,
+        description=(
+            "EN terms classified as recording-type (unregistered but not blocking). "
+            "Callers must store these to new_term_candidates.json at detection time "
+            "without interrupting the pipeline (AC4 new_term_blocking_boundary)."
+        ),
+    )
 
 
 class HITLInterrupt(Exception):
@@ -84,10 +92,18 @@ def check_hitl_triggers(
     conflict_entries: list[dict] | None = None,
     tm_top_score: float | None = None,
     tm_threshold: float | None = None,
+    en_keywords: list[str] | None = None,
+    route: str = "rule",
 ) -> HITLInterruptResult:
     """Run all four HITL trigger checks and report which ones fired.
 
     Each trigger is independent; multiple can fire simultaneously.
+
+    Trigger ① (new_term) fires ONLY for blocking-type new terms (AC4):
+      (a) Items in en_keywords (card subtypes) not in the glossary.
+      (b) Non-sentence-first, uppercase-starting, unregistered tokens in rule text.
+    Recording-type new terms (all others) are returned in recording_new_terms
+    for callers to store at detection time — they do NOT trigger interrupt.
 
     Args:
         en_text:          Source English card text (rule or flavour).
@@ -102,9 +118,13 @@ def check_hitl_triggers(
                           Defaults to the TM_THRESHOLD env var, then to 0.01.
                           Not a hardcoded magic constant — callers and operators
                           set this based on observed score distributions.
+        en_keywords:      Card subtype keywords (e.g. ["Icebreaker", "Barrier"]).
+                          Passed to new_term_guard for blocking type (a) detection.
+        route:            "rule" or "flavor"; passed to new_term_guard for type (b).
 
     Returns:
-        :class:`HITLInterruptResult` — ``should_interrupt=True`` if any trigger fired.
+        :class:`HITLInterruptResult` — ``should_interrupt=True`` if any trigger fired,
+        plus ``recording_new_terms`` for non-blocking unregistered terms.
     """
     from conflict_guard import check_conflicts
     from fidelity_guard import check_fidelity
@@ -116,15 +136,19 @@ def check_hitl_triggers(
 
     triggers: list[HITLTrigger] = []
 
-    # ① 신규 EN 용어 발견
-    new_term_result = check_new_terms(en_text, glossary, llm_judged)
-    if not new_term_result.passed:
+    # ① 신규 EN 용어 발견 — only BLOCKING terms trigger interrupt (AC4).
+    #   Recording terms are returned separately for callers to store at detection time.
+    new_term_result = check_new_terms(
+        en_text, glossary, llm_judged, en_keywords=en_keywords, route=route
+    )
+    if new_term_result.blocking_new_terms:
         triggers.append(
             HITLTrigger(
                 reason=InterruptReason.NEW_TERM,
-                detail={"new_terms": [t.en_term for t in new_term_result.new_terms]},
+                detail={"new_terms": [t.en_term for t in new_term_result.blocking_new_terms]},
             )
         )
+    recording_terms = [t.en_term for t in new_term_result.recording_new_terms]
 
     # ② 용어 충돌
     if conflict_entries is not None:
@@ -172,4 +196,5 @@ def check_hitl_triggers(
     return HITLInterruptResult(
         should_interrupt=len(triggers) > 0,
         triggers=triggers,
+        recording_new_terms=recording_terms,
     )

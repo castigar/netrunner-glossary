@@ -8,3 +8,9 @@ __pycache__/
 
 # 판정 체크포인트 — 재개용 작업 파일이지 자산이 아니다
 assets/judgments.jsonl
+
+# ouroboros 런타임이 실행마다 새로 쓰는 내부 파일 — 산출물이 아니다.
+# 추적 대상으로 두면 워크트리가 항상 더티라 Ralph가 작업 워크트리를 만들지 못한다.
+.ouroboros/context_pack.json
+.ouroboros/mechanical.toml
+.ouroboros_eval_artifact.md

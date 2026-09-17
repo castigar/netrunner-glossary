@@ -1,6 +1,6 @@
 # 인계 문서 — Netrunner 번역 보조 에이전트
 
-**작성 2026-09-16 · 갱신 2026-09-17(후속 세션).** 새 세션이 이 문서만 읽고 이어받을 수 있도록 쓴다.
+**작성 2026-09-16 · 갱신 2026-09-17(Gen 4 세션).** 새 세션이 이 문서만 읽고 이어받을 수 있도록 쓴다.
 사양의 단일 진실 원천은 [`SERVICE.md`](../SERVICE.md)이고, 이 문서는
 **지금 어디까지 됐고 다음에 뭘 해야 하는지**만 다룬다.
 
@@ -9,21 +9,18 @@
 ## 0. 30초 요약
 
 - 기획 완료. 1·2단계 구현 완료. **3단계(확정 절차)만 남았다.**
-- **코드가 한 브랜치로 모였다.** `ooo/ralph-6ec830bda576f952b7b2375d3c3868` @ `1230fad`,
-  **테스트 850개 통과.** 파이프라인·게이트·룰 용어 채점기가 전부 여기 있다.
-- **그러나 파이프라인이 실제 번역을 낸 적은 2026-09-17 후속 세션이 처음이다.**
-  그 전까지 모든 실행이 `_StubLLM`으로 돌았고, 스텁은 TM 상위 1건의 KO를 그대로
-  돌려준다. `pipeline_output.jsonl` 165건이 TM 원문과 **바이트 단위로 동일**하다.
-  `approved.jsonl`은 **존재한 적이 없다** — HITL 통과율이 0%다. §2.5를 먼저 읽는다.
-- 다음 할 일은 §4 작업 1(**Ralph 한 세대 더**). 사용자가 **완전히 깨끗한 새 세션에서** 돌리기로 했다.
-  Seed는 준비돼 있다 — `.ouroboros/seed-phase2c-v2.yaml`(AC 8개). 선결 조건은 전부 끝났다(§4 작업 0).
-- **다음은 Gen 4다.** 리니지에 cancelled Gen 4가 있지만 착수 전에 취소돼 한 일이 없다(§4 작업 1).
-  그리고 `start_ralph`의 `seed_content`는 **generation 1에서만 읽히므로** 새 Seed를 적용하려면
-  리니지를 새로 시작해야 한다 — 그러면 세대 번호는 어차피 1부터다.
-- **origin에 `main`과 최신 브랜치가 올라가 있다.** 나머지 `ooo/*` 5개는 로컬 전용이나
-  내용이 최신 브랜치에 들어 있어 유실 위험은 낮다.
-- **Ralph를 돌리기 전에 §5의 워크트리 위생을 반드시 확인한다.** 2026-09-17 Ralph 실패
-  9회 중 대부분이 이것 때문이었다.
+- **Gen 4까지 돌았다.** 최신 코드는 `ooo/ralph-c7ac33666c6a487f8e9ace45aebd9a` @ `31d3995`,
+  **테스트 878개 통과**(지정 인터프리터 실측, 자기 보고와 일치). AC 8개를 전부 실행하고 4커밋을 남겼다.
+- **그러나 평가 score는 0.0이었고, 그것은 에이전트가 코드를 쓰기 전에 이미 확정돼 있었다.**
+  ralph 내부 평가자 `spec_verifier`는 산출물 판정기가 아니라 **소스 정규식 스캐너**다. 행위·주관
+  assertion은 코드 실행 없이 무조건 SKIPPED가 되고, 한 AC에 SKIPPED가 하나라도 섞이면 그 AC는
+  NOT_EVALUATED = 점수상 FAIL이다. Gen 4는 AC 8개 **전부**가 그 상태였다. **§2.6을 먼저 읽는다.**
+- **`approved.jsonl`이 처음 생겼다(215건).** 다만 215/215가 코퍼스의 *다른* 카드 KO와 바이트 단위로
+  동일한 **스텁 산출물**이다. HITL 통과율 0%는 `eval_autoresume`으로 우회된 것이지 해결된 것이 아니다.
+- **Seed v3가 완성돼 있다** — `.ouroboros/seed-phase2c-v3.yaml`(AC 8 · 제약 53 · 온톨로지 20).
+  미확정 상수는 없다. 다음 할 일은 §4 작업 1(Gen 5 착수).
+- **미푸시 커밋이 있다.** Ralph 브랜치 2개가 전부 origin에 없다 — §1 브랜치 표.
+- **Ralph를 돌리기 전에 §5의 워크트리 위생을 반드시 확인한다.**
 
 ## 1. 좌표
 
@@ -48,16 +45,30 @@ export CORPUS_ROOT="C:/Users/SDS/Desktop/netrunner-corpus/netrunner-cards-json"
 
 | 브랜치 | HEAD | 테스트 | origin | 내용 |
 |---|---|---|---|---|
-| **`ooo/ralph-6ec8…`** | **`1230fad`** | **850 통과** | ○ | **여기서 작업한다.** 1·2단계 전부 + Ralph 3세대 + 게이트 통합 + 채점기 + 프롬프트 수정 |
-| `main` | `269adee` | — | ○ | 기획 문서·Seed·골든 셋·이 문서 |
-| `feat/rule-gold-eval` | `4dfe72a` | — | ✕ | 채점기 원본 — **`5ffeb2c`에 통합 완료, 역할 끝남** |
-| `ooo/orch_fa2a47fe46cf` | `3ad61ca` | 623 | ✕ | 게이트 수정 — **통합 완료, 역할 끝남** |
+| **`ooo/ralph-c7ac3366…`** | **`31d3995`** | **878 통과** | ✕ | **여기서 작업한다.** Gen 4 산출 4커밋 |
+| `ooo/ralph-6ec830bd…` | `1230fad` | 850 | ○ (ahead 1) | Gen 4의 기반. 프롬프트 수정 커밋이 미푸시 |
+| `main` | `6246db7` | — | ○ | 기획 문서·Seed·골든 셋·이 문서 |
+| `feat/rule-gold-eval` | `4dfe72a` | — | ✕ | 채점기 원본 — 통합 완료, 역할 끝남 |
+| `ooo/orch_fa2a47fe46cf` | `3ad61ca` | 623 | ✕ | 게이트 수정 — 통합 완료, 역할 끝남 |
 | `ooo/orch_a3466c696fe8` | `71cdbda` | 694 | ✕ | phase2c 실행 원본 — 최신 브랜치 이력에 포함됨 |
-| `ooo/orch_3b1f1bf54116` · `ooo/orch_a474c765ee60` | — | — | ✕ | 중간 단계 |
+| `ooo/orch_3b1f1bf54116` · `ooo/orch_a474c765ee60` · `ooo/orch_a6bc6099bdae` | — | — | 일부 | 중간 단계 |
 | `ooo/ralph-83c344…` | `d4b6ff9` | — | ✕ | 실패한 phase2b 리니지. 버려도 된다 |
 
-**코드는 `ooo/ralph-6ec8…` 하나로 모였다.** 로컬 전용 브랜치 5개는 내용이 전부 최신
-브랜치에 들어 있거나 버려도 되는 것이라 유실 위험이 낮다.
+**작업 워크트리 경로**
+`C:\Users\SDS\.ouroboros\worktrees\ralph-6ec830bda576f952b7b2375d3c3868\ralph-c7ac33666c6a487f8e9ace45aebd9a`
+(바깥 디렉터리 이름이 부모 리니지라 헷갈린다. `git worktree list`로 매번 확인한다.)
+
+**Gen 4의 4커밋**
+
+```
+31d3995 feat(AC8): eval_autoresume 생산자 측 구현 + 테스트 복구
+43d20b6 feat(AC5): approved.jsonl 적재 + new_terms 필드 + glossary.json 불변 증명
+0210142 fix(AC3): 검토 큐 레코드에 가드 위반 상세 보존 + ApprovedRecord 스키마 확장
+be480aa test(AC1): expand_card_to_field_inputs DraftRecord count + route tests
+```
+
+5파일 +957 / −12. **AC8 유실은 재발하지 않았다** — `tests/test_ac8_eval_autoresume.py`(450줄)가
+디스크와 git 이력 양쪽에 있다. Gen 3에서 통째로 날아갔던 바로 그 파일이다.
 
 ## 2. 2026-09-17에 한 일
 
@@ -250,6 +261,109 @@ AC3은 "검토 큐 레코드는 어느 가드가 왜 실패했는지를 보존�
 
 사용자 결정: **AC9은 Seed에서 빼고 AC 8개로 고정한다. AC8은 복구한다.**
 
+## 2.6 Gen 4 — 완주했으나 평가가 구조적으로 불가능했다
+
+**이 절이 §2.5만큼 중요하다. 여기 적힌 것을 모르면 다음 세대도 똑같이 score 0.0을 받는다.**
+
+### ① ralph 내부 평가자는 소스 정규식 스캐너다
+
+`ouroboros` 0.54.4 실측(설치 경로 `…/uv/cache/archive-v0/qVBiREO0OQDRTyJo/Lib/site-packages/ouroboros`):
+
+| 확인한 것 | 위치 |
+|---|---|
+| T3(행위)·T4(주관) assertion은 **코드 실행 없이 무조건 SKIPPED** | `verification/verifier.py:1022-1028` |
+| PASS는 **집합 동등** `outcomes == {VERIFIED}` — SKIPPED가 하나라도 섞이면 NOT_EVALUATED | `mcp/server/spec_verification_adapter.py:233`, `:244` |
+| `score = passed_count / total` — UNRESOLVED와 FAIL은 점수상 동일 | `:268-269` |
+| 추출기 기본값이 **"if unsure, classify as t3_behavioral"** | `verification/extractor.py:65` |
+| 파일 읽기 상한 **50KB** | `verifier.py:33` |
+| `evolve_step` 안에서 우회 불가 — AC가 0개일 때만 건너뛴다 | `mcp/server/adapter.py:1974-1976` |
+
+Gen 4의 AC 8개 evidence 문자열이 **전부** `"Behavioral assertion requires test execution or
+semantic analysis"`로 끝난다. 즉 8개 모두 T3를 물고 있었고 **어떤 AC도 PASS가 될 수 없었다.**
+
+**그래서 AC 문언을 이 스캐너가 좋아하는 형태로 깎지 않기로 했다.** 이벤트 스토어 7세대 실측이
+그 판단을 뒷받침한다 — AC FAIL 58건 중 증거 공백 25 / 기능 실패 33이고, `spec_verifier`가 낸 FAIL
+23건은 **23건 전부가 증거 공백**이며 기능 결함을 지적한 적이 한 번도 없다. non-verdict 비율은
+`formal_evaluation` 경로 **0/47**, `spec_verifier` 경로 **18/23**이다. Gen2→Gen3에서 AC 문언을
+전부 갈아치웠는데도 비율은 0.833 → 0.778로만 움직였다.
+
+**대안: `formal_evaluation`은 별도 진입점이다.** `ouroboros_evaluate` 계열
+(`mcp/tools/evaluate_ralph_chain.py:83,99`)이 그것을 쓴다. ralph 루프는 그대로 두고 **끝난
+워크트리에 `ouroboros_evaluate`를 따로 돌려** 판정을 받는다.
+
+### ② 인터프리터 제약은 무시된 게 아니라 인코딩이 불가능했다
+
+Ralph 워크트리의 `.ouroboros/mechanical.toml`에 `# auto-generated by ouroboros evaluate detector`
+/ `test = "uv run pytest"`가 들어 있고 평가자가 그 명령을 실행한다. **`uv run pytest`는 에이전트의
+일탈이 아니라 ouroboros가 스스로 써넣은 명령이다.**
+
+게다가 `evaluation/detector.py:497-509`가 절대경로 실행파일을 명시적으로 거부하고
+(`"absolute paths ... are refused. Only bare names and ./-prefixed project-local wrappers survive"`),
+`evaluation/languages.py:37-57`의 허용 목록에도 bare name만 있다. 즉 Seed에 적었던
+`C:/…/.venv/Scripts/python.exe -m pytest`는 **설정에 넣어도 드롭된다.**
+
+→ **Seed v3에서 이 제약을 뺐다.** 지킬 수 없는 제약을 남겨 두면 위반으로만 집계된다.
+
+### ③ AC4가 폐기된 설계를 명령하고 있었다
+
+§3 결정 ④(차단형/기록형 분리)가 구현되지 않은 이유는 "제약에 주인이 없어서"가 아니다.
+**AC4 문언이 반대말을 하고 있었다** — "네 트리거(신규 EN 용어, 용어 충돌, 규칙 검증 실패,
+TM 최고 유사도 임계 미만)가 그래프 노드에서 발화해 실행이 멈춘다". AC 단위로 일하는 실행자는
+AC를 따랐고 그게 정상이다.
+
+**AC 동결은 개수 동결이지 문언 동결이 아니다.** 제약 문장 자체가 "AC는 8개로 고정한다. 새 AC를
+추가하지 않는다"이다. AC4·AC6 문언 수정은 동결을 깨지 않는다. Seed v3가 그렇게 했다.
+
+### ④ 스텁으로 들어가는 문이 셋이다
+
+`--llm-model`을 required로 만드는 것만으로는 막히지 않는다.
+
+| 진입구 | 위치 |
+|---|---|
+| `run_pipeline()` 라이브러리 기본값 `llm_model=None` → `_StubLLM` | `src/run_pipeline.py:231`, `:272-278` |
+| `evaluate_pipeline`의 **별도** `--llm-model`(기본 None) | `src/evaluate_pipeline.py:598`, `:647` |
+| `--pipeline-output`이 임의 jsonl 수용 — **스텁 시대 파일이 저장소에 그대로 있다** | `src/evaluate_pipeline.py:566` |
+
+### ⑤ 산출물이 자기를 증명하지 못한다
+
+`_state_to_draft_record`의 `slim_hits`가 `tm_hits`에서 **`ko_text`를 버린다**
+(`src/run_pipeline.py:183-186`). 그래서 `pipeline_output.jsonl`만으로는 에코율을 계산할 수 없다.
+그런데 **Seed 온톨로지의 `draft_record`는 이미 `tm_hits(id·en_text·ko_text·score)`를 요구한다** —
+구현이 Seed를 어기고 있는 것이고, 복원은 새 요구가 아니라 복구다. 헤더에 모델 id·실행 모드도 없다.
+
+### ⑥ TM 에코 실측 — 새 게이트의 근거
+
+| 실행 | 레코드 | TM 최상위와 바이트 동일 |
+|---|---|---|
+| 스텁 `pipeline_output.jsonl` | 165 | **165 (100%)** |
+| 스텁 `approved.jsonl` | 215 | **215 (100%)** |
+| 실모델 `pipeline_real10_before_prompt_fix.jsonl` | 17 | **0 (0%)** |
+| 실모델 `pipeline_real10_after_prompt_fix.jsonl` | 17 | **0 (0%)** |
+
+- **정당한 우연일치는 0이 아니다** — hold_out 100장 중 **1장(1.0%)** 이 TM 최상위 KO와 자기 정답 KO가
+  바이트 동일하다. 완벽한 번역기도 이 split에서 1% 복사한다. 그래서 임계를 상수로 박지 않고
+  `max(ECHO_FLOOR, 실행 중 측정한 우연일치율)` 관계로 쓴다(gate3의 `THRESHOLD_FACTOR`와 같은 위상).
+- **바이트 동일은 적대적 게이트가 아니다** — 실모델 rule 경로 유사도 p90 0.903 / max 0.912로 근사
+  에코가 이미 있고 문자 하나로 회피된다. **정직한 퇴행 카나리아**로 포지셔닝한다.
+- **`ECHO_FLOOR = 0.05` 확정(2026-09-17).** 관계식은 `max(0.05, 실행 중 측정한 우연일치율)`.
+  정책 하한이며 실측 표본에 적합시킨 값이 아니다. §7-8 참조.
+- **중단은 분모에 영향을 주지 않는다** — 초벌 생성이 가드 검사보다 먼저라 중단된 레코드도 초벌을
+  갖는다. 실측: 165건 중 164건이 중단이었으나 **빈 초벌은 0건**.
+- **TM 히트 커버리지 하한은 두지 않는다** — 검색기가 구조상 항상 상위 k건을 돌려주어 커버리지가
+  항상 100%다(165/165, 17/17). 판정에 쓰면 영원히 통과하는 장식이 된다.
+
+### ⑦ 한국어 플레이버의 위치 (정정)
+
+`v2/translations/ko/cards/*.json`에는 `flavor` 키가 **0건**이라 "한국어 플레이버가 없다"고 오판하기
+쉽다. 실제로는 **`v2/translations/ko/printings/*.json`에 710건** 있고 `data/hold_out.json`도
+`ko_flavor`를 100장 중 65장 보유한다. EN 쪽이 `v2/printings`에 있는 것과 같은 구조다.
+
+### ⑧ 결정 ④는 여전히 미구현이다
+
+`blocking_keyword`·`logged_only` 등 온톨로지 값이 `src/` 어디에도 없고,
+`new_term_candidates.json` 1100건 중 두 번째 항목이 그대로 `strong`(마크업 태그명)이며
+`ko_rendering`은 1100건 전부 빈 문자열이다. **Seed v3의 AC4가 이것을 요구하도록 고쳐졌다.**
+
 ## 3. 확정된 사양 결정 (재논의 불필요)
 
 | # | 결정 |
@@ -258,6 +372,7 @@ AC3은 "검토 큐 레코드는 어느 가드가 왜 실패했는지를 보존�
 | ② | 룰 경로 후보 상한은 Dice 전역 순위가 아니라 **2단계** — EN 빈도 상위 N → EN별 Dice 상위 k |
 | ③ | 하드 게이트 3 임계 = **TM 베이스라인 × 0.7**. 상수로 박지 않는다 |
 | ④ | **신규 용어는 차단형/기록형으로 나눈다.** 차단형만 interrupt를 발화시키고 기록형은 통과시킨다 (2026-09-17 결정, 아래) |
+| ⑤ | **Bedrock 모델은 폴백한다.** 1순위 global.anthropic.claude-haiku-4-5-20251001-v1:0이 쓰로틀링·미가용으로 실패하면 availableModelsOnBedrock.md의 다른 모델로 재시도한다. 스텁으로는 절대 폴백하지 않는다 (2026-09-17 결정, 아래) |
 
 ### 결정 ④ — 신규 용어 판정 경계
 
@@ -312,6 +427,40 @@ AC3은 "검토 큐 레코드는 어느 가드가 왜 실패했는지를 보존�
 같은 인물·기업·지명은 역어 일관성이 필요한 것이 맞지만, 차단할 만큼은 아니라고 판단했다. 기록형으로
 쌓아 두고 배치로 검토한다.
 
+
+### 결정 ⑤ — Bedrock 모델 폴백
+
+가용 모델은 `availableModelsOnBedrock.md`에 5개 있다. 폴백 순서는 기재 순서를 따른다.
+
+```
+1  global.anthropic.claude-haiku-4-5-20251001-v1:0   (1순위)
+2  us.amazon.nova-pro-v1:0
+3  us.amazon.nova-2-lite-v1:0
+4  global.amazon.nova-2-lite-v1:0
+5  us.amazon.nova-lite-v1:0
+```
+
+쓰로틀링(`ThrottlingException`)·용량 부족·모델 미가용으로 실패하면 다음 모델로 내려간다.
+재시도 전에 지수 백오프를 적용하고 재시도 횟수와 대기 시간을 산출물에 기록한다.
+
+**금지 세 가지.**
+
+1. 목록 밖 모델로 폴백하지 않는다.
+2. **어떤 경우에도 `_StubLLM`으로 폴백하지 않는다** — 목록의 모델이 전부 실패하면 빈 예측을 남기고
+   `empty_prediction_cause`에 `model_invocation_failure`로 원인을 보고한다. 스텁 출력이나
+   `hold_out`의 `ko_text`로 채우지 않는다.
+3. 폴백을 숨기지 않는다 — 헤더에 시도한 모델 id와 각각의 성공·실패 사유를, 각 `DraftRecord`에
+   그 레코드를 실제로 생성한 모델 id를 남긴다.
+
+**혼합 실행은 모델별로 나눠 보고한다.** Haiku와 Nova는 계열이 달라 단일 평균이 어느 쪽 품질도
+대표하지 않는다. 모델별 레코드 수와 모델별 게이트 수치를 함께 내야 품질 변화가 모델 교체 탓인지
+코드 변경 탓인지 구분된다.
+
+> **정정 — `us.*`가 전부 금지인 것이 아니다.** Seed v2의 제약은 "us.* 접두 id는 이 계정에서
+> 호출되지 않는다"라고 적었으나 이는 과일반화다. 실제로 없는 것은 **`us.anthropic.*`** 뿐이고
+> (`run_pipeline.py` docstring의 예시가 그것이다), **`us.amazon.*` 4개는 가용 목록에 실재한다.**
+> 이 문장을 그대로 두면 폴백 대상이 전부 금지되므로 v3에서 고쳤다.
+
 ## 4. 다음에 할 일
 
 ### 작업 0 — 선결 조건 ✔ 2026-09-17 완료
@@ -345,64 +494,41 @@ AC7·AC8·AC9 문언뿐 아니라 Seed 전체가 남아 있다:
 # payload의 ac_focus.active_ac_descriptions = AC 문언 목록
 ```
 
-### 작업 1 — Ralph 한 세대 더 ★ 최우선
+### 작업 1 — Gen 5 착수 ★ 최우선
 
-사용자가 **완전히 깨끗한 새 세션에서** 돌리기로 했다. 이 세션은 Seed 생성까지만 했다.
+**Seed는 준비돼 있다 — `.ouroboros/seed-phase2c-v3.yaml`(AC 8 · 제약 50 · 온톨로지 19).**
+v2에서 손댄 곳만 손댔다: AC4·AC6 문언, 제약 −1(인터프리터)/+7, 온톨로지 +1(`echo_gate_contract`),
+1차 컨텍스트를 Gen 4 워크트리로 갱신. goal과 나머지 AC 6개는 그대로다.
 
-**세대 번호 — 다음은 Gen 4가 맞다.** `lineage_status`는 `Generations: 4`를 돌려주고 Gen 4가
-cancelled로 찍혀 있지만, **그 Gen 4는 착수 전에 취소돼 한 일이 없다.** 이벤트 스토어에 Gen 4는
-`lineage.generation.failed`(`phase: cancelled`) 한 건뿐이고 `started`·`seeding`·`executing`이
-전혀 없다. 파생된 Seed도 없다.
+**Seed는 완성됐다 — 미확정 상수는 없다.** `ECHO_FLOOR = 0.05`가 2026-09-17에 확정돼
+AC6 문언·제약·온톨로지에 반영됐다(§7-8). 남은 것은 실행뿐이다.
 
-**취소된 세대 번호는 재사용된다.** Gen 2가 04:02:45에 같은 사유(MCP transport disconnect)로
-취소됐다가 04:09:40에 **같은 번호로 재개해** 04:15:32에 completed 했다. 즉 cancelled는 그 번호를
-소모하지 않는다. (`lineage_status`의 세대 수만 보고 다음을 Gen 5로 단정하면 틀린다.)
-
-다만 아래 A안을 택하면 새 리니지라 세대는 1부터 다시 센다 — 번호 자체는 중요하지 않다.
-
-**그런데 새 Seed를 적용하려면 리니지를 이어 붙일 수 없다.** `start_ralph`의 `seed_content`는
-스키마상 *"Seed YAML content for generation 1. Omit for continuation."* 이다. 기존 리니지를 이어
-받으면 Gen 3의 진화 Seed(AC 9개)를 그대로 다시 쓰므로 §4 작업 0의 수정이 **한 줄도 반영되지 않는다.**
-선택지는 둘이고, **A를 권한다.**
-
-| | 방법 | 얻는 것 | 잃는 것 |
-|---|---|---|---|
-| **A (권장)** | 새 `lineage_id`로 시작하고 `seed_content`에 `seed-phase2c-v2.yaml`을 넣는다. `project_dir`은 그대로 Ralph 워크트리(브라운필드라 코드는 전부 있다) | AC 8개·제약 44개가 실제로 적용된다 | 세대 카운트가 1부터. 이전 3세대의 평가 이력과 분리된다 |
-| B | 기존 리니지를 Gen 4로 잇고 `conductor_directive`로 밀어 넣는다 | 이력 연속성 | directive는 *non-relaxing*이라 **AC9 제거 같은 축소가 거부될 수 있다**. 미검증 |
+**A안(새 리니지 + `seed_content`)으로 돌린다.** Gen 4가 이 방식으로 정상 동작했고, AC 8개가 실제로
+적용되는 것을 `ac_index` 0~7로 확인했다. `start_ralph`의 `seed_content`는 generation 1에서만
+읽히므로 기존 리니지를 이어 붙이면 새 Seed가 한 줄도 반영되지 않는다.
 
 ```
 start_ralph(
-  lineage_id = "<새 리니지 id>",                  # A안: 새로 만든다
-  seed_content = <.ouroboros/seed-phase2c-v2.yaml 전문>,
-  project_dir = "C:\Users\SDS\.ouroboros\worktrees\orch_a3466c696fe8\ralph-6ec830bda576f952b7b2375d3c3868",
-  per_iteration_timeout_seconds = 7200,          # 상한값. 기본 1800은 짧다
+  lineage_id  = "<새 리니지 id>",
+  seed_content = <.ouroboros/seed-phase2c-v3.yaml 전문>,
+  project_dir  = "C:\Users\SDS\.ouroboros\worktrees\ralph-6ec830bda576f952b7b2375d3c3868\ralph-c7ac33666c6a487f8e9ace45aebd9a",
+  per_iteration_timeout_seconds = 7200,
   max_generations = 1,
   max_total_seconds = 7800
 )
 ```
 
-> **2026-09-17 정정.** 이 문서가 원래 적어 둔 `project_dir`
-> (`...\orch_fa2a47fe46cf\orch_a3466c696fe8`)는 `71cdbda` — phase2c 원본이고
-> **Ralph 3세대 작업이 없는 상태**다. 그대로 돌리면 6커밋을 버리고 다시 시작한다.
-> 위 경로가 `1230fad`가 붙은 실제 워크트리다. `git worktree list`로 매번 확인한다.
->
-> 그리고 이 브랜치는 **지금 그 워크트리가 점유 중**이라 §5의
-> `Task branch already checked out in another worktree`에 그대로 걸린다.
-> 시작 전에 `git checkout --detach`로 풀어 준다.
+> **시작 전에 브랜치 점유를 푼다.** 대상 브랜치를 워크트리가 점유 중이면
+> `Task branch already checked out in another worktree`로 실패한다.
+> `git -C <워크트리> checkout --detach` 후 `git worktree prune`. §5 참조.
 
-**세대 상한 두 곳을 모두 풀어야 한다.**
+**합격 판정은 ralph 내부 score로 하지 않는다**(§2.6 ①). 다음 셋으로 한다:
 
-| 위치 | 값 | 비고 |
-|---|---|---|
-| `~/.ouroboros/config.yaml` → `execution.auto_evolve_max_generations` | `3` → **`4`로 변경 완료** (2026-09-17) | 평가가 거부해 Ralph가 **자동 체인될 때** 적용되는 전역 상한. 백업은 `config.yaml.bak-20260917` |
-| `start_ralph`의 `max_generations` 인자 | 호출마다 지정 | 이 호출에서 돌릴 세대 수. 리니지 누적이 아니라 **이번 호출분**이다 |
+1. 워크트리에서 pytest 직접 실측 — `CORPUS_ROOT` 설정 후 `.venv` 인터프리터로
+2. TM 에코율 실측 — `draft_ko` vs 자기 `tm_hits[0].ko_text`, 공백 정규화 후
+3. 끝난 워크트리에 `ouroboros_evaluate`를 따로 돌려 `formal_evaluation` 판정
 
-**타임아웃은 반드시 명시한다.** `per_iteration_timeout_seconds` 기본값이 1800초(30분)라
-Gen 2가 작업 중 잘렸다. Gen 3는 **80분** 걸렸으므로 최대값 7200(2시간)을 쓴다.
-`max_total_seconds`는 `max_generations × per_iteration`보다 크게 잡는다 — 여러 세대를
-돌릴 거면 그만큼 늘려야 한다(예: 2세대면 15000).
-
-**시작 전 §5의 워크트리 위생을 확인한다.**
+Gen 3·Gen 4 모두 80분 안팎 걸렸다.
 
 ### 작업 2 — 룰 용어 채점 실행 ✔ 2026-09-17 완료
 
@@ -454,6 +580,24 @@ AC9 문언은 코드에 없고 이벤트 스토어에만 있다 — `ouroboros.d
 **Ralph 브랜치보다 한참 뒤처져 있다.** 돌리기 전에 최신 워크트리로 고친다.
 
 ## 5. 함정 모음 (직접 밟은 것들)
+
+### ralph 내부 score는 품질 신호가 아니다 ★ 새로 밝혀진 것
+
+`evolve_step`의 평가자는 소스 정규식 스캐너이고 행위 assertion을 전부 SKIPPED로 떨어뜨린다.
+AC 하나에 SKIPPED가 섞이면 그 AC는 NOT_EVALUATED이고 점수상 FAIL과 같다. **score 0.0은 코드 품질과
+무관하게 나올 수 있다.** 7세대 동안 이 경로가 기능 결함을 지적한 적은 0건이다. 상세는 §2.6 ①.
+품질 판정은 pytest 실측과 별도 `ouroboros_evaluate`로 한다.
+
+### Seed 제약에 절대경로 실행파일을 적지 말 것
+
+`detector.py`가 절대경로를 거부해 그 명령은 드롭된다. 손으로 `mechanical.toml`에 써도 마찬가지다.
+인터프리터를 고정하고 싶으면 Seed가 아니라 프로젝트 의존성·래퍼로 해결한다. §2.6 ②.
+
+### 서브에이전트 보고를 실측 없이 인용하지 말 것
+
+이번 세션에서 레인 보고 중 최소 3건이 틀렸다 — "한국어 코퍼스에 flavor가 0건"(실제로는
+`ko/printings`에 710건), "`pipeline_output.jsonl`의 interrupted가 0건"(실제 164/165),
+그리고 서로 모순되는 AC 번호. **파일을 직접 열어 확인한 것만 문서에 적는다.**
 
 ### Ralph는 깨끗한 워크트리를 전제한다 ★ 가장 자주 걸린 것
 
@@ -562,7 +706,8 @@ uvx --python ">=3.12" --from "ouroboros-ai[tui]" ouroboros tui monitor --db-path
 | phase2a | 번역 검토 큐 · 가드레일 · MCP 4도구 | 8 | 실행 완료, 평가 4/8 |
 | phase2b | 하드 게이트 채점 · 관찰 지표 | 5 | 실행 완료, 평가 2/5 |
 | phase2c | 온라인 파이프라인 본체 | 6→9 | 실행 완료, Ralph 3세대. `seed-phase2c.yaml`(AC 6개)은 Gen 1 입력이고 Gen 3의 진화본은 AC 9개다 |
-| **phase2c-v2** | 같은 범위, 다음 세대 입력 | **8** | **작성 완료, 미실행** — `seed-phase2c-v2.yaml`. Gen 3 진화 Seed에서 AC9 제거 + 결정 3건 반영(§4 작업 0) |
+| phase2c-v2 | 같은 범위, Gen 4 입력 | 8 | **실행 완료**(Gen 4). 평가 0.0 · QA 0.44 — 상세는 §2.6 — `seed-phase2c-v2.yaml`. Gen 3 진화 Seed에서 AC9 제거 + 결정 3건 반영(§4 작업 0) |
+| **phase2c-v3** | 같은 범위, Gen 5 입력 | **8** | **작성 완료, 미실행** — `seed-phase2c-v3.yaml`. v2에서 AC4·AC6 문언 수정 + 제약 −1/+10 + 온톨로지 +2(모델 폴백 포함). 미확정 상수 없음 |
 | phase3 | Issue 동기화 · Pages 검수 뷰 · 패턴 매핑 | 7 | **작성 완료**(`55d694a`), 미실행. context_references가 낡음 |
 
 `main`의 `.ouroboros/`에 있는 Seed: phase1 · phase2b · phase2c · phase3 · `seed.yaml`.
@@ -576,17 +721,27 @@ Seed를 찾을 때 그것을 집지 않도록 주의한다.
 1. 2021–2022 번역분 142장의 코퍼스 편입 여부
 2. 편집거리 감소폭의 납품 이후 추적 방법·주기
 3. 가드레일 통과율을 하드 게이트로 승격할지 관찰 지표로 둘지
-4. **브랜치 정리 방침** — `ooo/*` 7개가 쌓였다. `ooo/ralph-6ec8…`로 수렴시키고
-   나머지를 정리할 시점
+4. **브랜치 정리 방침** — `ooo/*` 8개가 쌓였다. `ooo/ralph-c7ac3366…`으로 수렴시키고
+   나머지를 정리할 시점. **Ralph 브랜치 2개가 origin에 없다** — 먼저 푸시할지도 미정
 5. **AC 확장을 어디서 멈출지** — Ralph가 AC7·AC8·AC9를 스스로 추가했다.
    AC9은 범위 밖으로 판정해 뺐지만(§2.5 ⑥) 일반 기준은 아직 없다.
-   온톨로지의 `ac_freeze_precondition`이 그것을 정의하려는 것으로 보이나 미확인
+   온톨로지의 `ac_freeze_precondition`이 그것을 정의하려는 것으로 보이나 미확인.
+   **다만 "AC 동결"의 뜻은 정해졌다 — 개수 동결이지 문언 동결이 아니다(§2.6 ③).**
 6. ~~신규 용어 판정을 어디서 끊을지~~ ✔ **2026-09-17 결정 — §3 결정 ④.**
    차단형/기록형을 나누고 차단형은 미등재 부제 + 룰의 비문장초 대문자 토큰으로 한정한다.
-   **다만 구현은 아직 안 했다** — Seed에만 있고 코드는 그대로다. 다음 세대가 구현한다
+   **Gen 4도 구현하지 않았다**(§2.6 ⑧). 원인은 AC4 문언이 반대말을 하고 있어서였고,
+   Seed v3의 AC4가 이것을 요구하도록 고쳐졌다. Gen 5가 구현한다
 7. **초벌 품질을 무엇으로 볼지** — 실제 모델 초벌은 읽을 만하지만 TM 상위 1건이
    엉뚱한 카드인 경우가 있다(`net_celebrity`의 TM 히트는 `paywall_implementation`).
    TM 검색 품질 자체를 지표로 둘지 미정
+8. ~~`ECHO_FLOOR` 값~~ ✔ **2026-09-17 결정 — `ECHO_FLOOR = 0.05`.** 관계식은
+   `max(0.05, 실행 중 측정한 정당한 우연일치율)`이다. 근거는 기계적 분리이지 표본 적합이 아니다 —
+   스텁 100%는 구현상 필연, 실모델 0%도 필연, 정당한 우연일치가 hold_out 실측 1.0%이므로 5배 여유다.
+   17건짜리 실행에 맞춰 고른 값이 아니다. 성격은 gate1의 0.95·gate2의 1.0과 같은 **정책 하한**이라
+   "측정값을 상수로 박지 않는다"는 원칙에 어긋나지 않는다
+9. **TM 검색 품질 자체** — `tm_confidence` 점수가 전 레코드에서 0.023~0.033이라는 극히
+   좁은 띠에 뭉쳐 있다. 이 분포로 유도한 p20 임계는 사실상 임의 분할에 가깝다.
+   TM 융합 설계를 다시 볼지, 아니면 임계 유도 방식을 바꿀지 미정
 
 ### 알려진 사소한 결함 (미수정)
 

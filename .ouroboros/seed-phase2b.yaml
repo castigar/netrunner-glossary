@@ -1,0 +1,151 @@
+goal: '[페이즈 2b/3 · 하드 게이트 채점] Android: Netrunner EN→KO 번역 보조 에이전트의 품질 게이트 채점만 구현한다. hold-out 100장에 대해
+  하드 게이트 3개(용어 준수율, 게임 기호 보존율, 정규화 편집거리 중앙값)를 자동 채점하고, 하나라도 미달이면 불합격으로 판정하며, 관찰 지표 2종을 LLM-Judge로 측정해
+  보고하는 데까지가 범위다. 1단계 자산 구축과 2단계 온라인 경로는 이미 완료되어 입력으로 주어진다. 3단계 확정 절차(GitHub Issue 동기화·Pages)는 이 페이즈의 범위가
+  아니다. 단일 진실 원천은 mini_pjt/SERVICE.md다.'
+task_type: code
+brownfield_context:
+  project_type: brownfield
+  context_references:
+  - path: C:\Users\SDS\.ouroboros\worktrees\orch_a6bc6099bdae\orch_3b1f1bf54116
+    role: primary
+    summary: 'netrunner-glossary, 브랜치 ooo/orch_3b1f1bf54116 (HEAD 40d8dc5). 1·2단계 산출물이 전부 여기 있다: src/
+      모듈 21개, tests/ 465개 통과, assets/glossary.json(공식 154 + 부제 68 + 룰 123, llm_judged=true) · assets/patterns.json(51)
+      · assets/conflicts.json(25, source로 subtype 12 / rule 13 구분) · data/hold_out.json(100장) · data/train.json.
+      phase2a 산출 모듈 8개가 이미 있다: glossary_guard.py, new_term_guard.py, fidelity_guard.py, injection_guard.py,
+      conflict_guard.py, approved_store.py, hitl_interrupt.py, mcp_server.py'
+  - path: C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json
+    role: reference
+    summary: 원본 코퍼스. Null Signal Games의 공개 repo이며 팀 소유가 아니므로 쓰기를 하지 않는다. CORPUS_ROOT 환경변수로 주입되고 경로를 코드에
+      하드코딩하지 않는다.
+  - path: C:\Users\SDS\Desktop\sds-ax-practice\day7_practice
+    role: reference
+    summary: 재사용할 골격. final_scenario.py(그래프), local_tracer.py(트레이스 콜백), mcp_server.py(MCP 서버), guards_input.py(가드레일),
+      llm_judge.py·run_eval.py(평가).
+  existing_patterns:
+  - 'phase2a 산출 모듈 8개가 이미 있다: glossary_guard.py, new_term_guard.py, fidelity_guard.py, injection_guard.py,
+    conflict_guard.py, approved_store.py, hitl_interrupt.py, mcp_server.py'
+  - '1단계 모듈 13개도 그대로 있다: build_assets, conflict_detector, corpus_split, filter_untranslated, ko_morphology,
+    load_official_glossary, pattern_extractor, subtype_extractor, term_candidate_extractor, term_extraction_eval,
+    term_judge, tm_baseline, tm_index'
+  - 테스트 465개가 통과 상태이며 pytest로 실행한다 (pyproject.toml의 pythonpath=['src']).
+  - 기존 모듈을 다시 만들지 않는다. 새 모듈로 추가하고 기존 것을 소비한다.
+  - '회귀 감시선: tests/test_tm_baseline.py가 TM-only 베이스라인 중앙값을 0.385 +/- 0.025로 고정한다. 이 테스트를 완화하지 않는다.'
+  - MCP 도구는 @mcp.tool() 데코레이터가 아니라 def 이후 mcp.tool()(fn)으로 등록한다. 데코레이터는 모듈 레벨 이름을 FunctionTool 객체로 재바인딩해
+    직접 호출을 깨뜨린다.
+  existing_dependencies:
+  - numpy>=1.26
+  - rank-bm25>=0.2.2
+  - scikit-learn>=1.4
+  - sentence-transformers>=3.0
+  - pydantic>=2.6
+  - langchain-core>=0.3
+  - langchain-aws>=0.2
+  - kiwipiepy>=0.18
+  - pytest>=8.0
+  - fastmcp>=2.0
+constraints:
+- 구현 기간 2일, 이후 장기 유지보수 전제
+- '원본 코퍼스는 Null Signal Games의 공개 repo https://github.com/Null-Signal-Games/netrunner-cards-json 이며 대상
+  게임은 Android: Netrunner다. 팀이 소유하지 않은 공식 공개 저장소이므로 도구는 이 repo에 쓰기를 하지 않는다.'
+- 검수 경로는 원본 repo가 아니라 신규 팀 소유 repo다. 그 repo에만 쓰기를 한다.
+- '코퍼스 레이아웃은 v2를 사용한다. v2는 슬러그 id(예: 15_minutes), 카드당 1파일(v2/cards/*.json), 번역은 v2/translations/ko/cards/*.json
+  구조이며 KO 번역 1195장이 있다. legacy pack/ 레이아웃(code 숫자 문자열, 팩당 1파일 배열)은 사용하지 않는다.'
+- 룰 텍스트는 text 필드, 플레이버는 flavor 필드로 이미 분리되어 있고 기호 제거본 stripped_text가 제공되므로 기호 정규화 로직을 새로 작성하지 않는다.
+- 학습에 사용 가능한 깨끗한 코퍼스는 2012-2016 발매분 약 980장이다. EN 전체 2460장 중 KO 번역은 1257장(51%)이고, 2017년 이후 번역은 중단됐으며 2017년
+  부제는 100% 영문 잔존, 한글이 전혀 없는 껍데기 레코드가 124장 있다.
+- 대상 콘텐츠는 카드 룰 텍스트와 플레이버 텍스트만이다. 룰북과 UI는 범위에서 제외한다.
+- 이미 공개된 카드만 취급하므로 외부 LLM 전송 제약이 없다.
+- Supervisor 패턴과 Plan-Execute는 채택하지 않는다. 룰/플레이버 분기는 라우팅으로 처리하며 에이전트 분할이 아니다.
+- 평가 정답셋은 별도 제작하지 않고 기존 번역물 hold-out을 사용한다.
+- 충돌 용어는 사람이 확정하기 전까지 용어집에 포함하지 않는다.
+- 승인만으로 용어집이 자동 갱신되지 않는다.
+- 편집거리 기준선으로 무보조 사람 초벌을 사용할 수 없다. castigar/netrunner-cards-json-old 실측 결과 그 repo의 KR 번역 956장은 전부 현재 ko의
+  부분집합이고 내용이 98.9-100% 동일한 최종본 스냅샷이며(text 상이 8/728건은 오타·띄어쓰기 교정 수준), translations/kr 커밋 9건 중 8건이 upstream
+  메인테이너의 2016년 일괄 포맷팅이고 사용자 커밋은 2026-09-11 단 1건이라 초벌에서 최종으로 가는 진행 이력이 존재하지 않는다.
+- 공식 용어집이 부분적으로 이미 존재한다. 부제·카드타입·팩션·사이클·세트는 추출 대상이 아니므로 로드만 하며, 추출이 필요한 것은 룰 텍스트 내 용어(install, trash,
+  rez 등)뿐이다.
+- '재사용할 기존 코드: day7_practice/final_scenario.py를 그래프 뼈대로, local_tracer.py를 트레이스 콜백으로, llm_judge.py와 run_eval.py를
+  평가 골격으로, mcp_server.py를 MCP 서버 골격으로, guards_input.py를 가드레일 골격으로 쓴다. day5_practice의 로깅 미들웨어에서 usage_metadata는
+  hasattr 체크 후 접근한다.'
+- '구현 이후로 미루는 것: 리랭킹, 형태소 분석기 도입, 수정 피드백의 용어집 자동 승격, 용어 개정 이력 추적, 룰북·UI 텍스트 지원, 승인 결과의 repo 자동 반영, 승인
+  시 신규 용어 자동 등재.'
+- '착수 전 결정이 필요한 잔여 항목: 2021-2022 번역분 142장의 코퍼스 편입 여부, 편집거리 추적 주기, 가드레일 통과율의 하드 게이트 승격 여부.'
+- 코퍼스 로컬 경로는 C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json 이다. 사용자 이력 repo 스냅샷은 C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json-old
+  에 있으나 최종본 스냅샷이므로 학습·평가에 사용하지 않는다. 경로는 설정값으로 분리하고 코드에 하드코딩하지 않는다.
+- 검수 repo는 castigar/netrunner-glossary 이며 public이고 Issues가 활성화되어 있다. 기본 브랜치는 main이며, 이 프로젝트의 코드 저장소를 겸한다
+  — mini_pjt 작업 트리가 이 repo의 origin/main으로 push되어 있으므로 구현 코드, conflicts.json/new_term_candidates.json 산출물,
+  GitHub Pages 검수 뷰가 모두 같은 저장소에 있다. 인증은 GITHUB_TOKEN 환경변수에서 읽는다(fine-grained PAT, admin/push 권한 확인됨).
+  토큰 값을 코드·로그·커밋에 절대 기록하지 않으며, 환경변수가 없으면 즉시 실패하고 드라이런으로 조용히 넘어가지 않는다.
+- 검수 repo에는 term-conflict 와 new-term-candidate 라벨이 아직 없으므로 Issue 동기화 전에 멱등하게 생성한다. 기존 라벨(bug, enhancement
+  등 GitHub 기본값)은 건드리지 않는다.
+- 이 Seed는 전체 사양(seed.yaml, AC 28개)을 구현 순서에 따라 분할한 것 중 phase2a다. 분할 이유는 오케스트레이터 플래너가 AC 28개를 7개 스테이지로 배정하려다
+  자기 위상 정렬을 위반해 실행이 시작되지 못했기 때문이다. 사양 자체는 변경되지 않았다. 원본 AC#22(구현 순서를 고정한다)는 페이즈 분할 자체가 그 구현이므로 수용 기준으로
+  중복 채점하지 않고 제약으로 넣는다.
+- 이 페이즈에서는 3단계(GitHub Issue 동기화·Pages 검수 뷰·패턴 매핑)와 하드 게이트 3개의 채점을 구현하지 않는다. 다만 이후 페이즈가 이어붙일 수 있도록 모듈 경계와
+  산출물 포맷은 SERVICE.md 6절 구조를 따른다.
+- 1단계 자산은 이미 구축되어 있고 이 페이즈의 입력이다. assets/glossary.json (official / subtype_extracted / extracted / subtype_evaluation
+  / counts), assets/patterns.json, assets/conflicts.json(항목마다 source 필드로 subtype과 rule을 구분)을 소비한다. 자산을
+  다시 만들지 않는다.
+- glossary.json의 llm_judged 플래그를 확인하고, false면 룰 용어가 미판정 상태라는 뜻이므로 그 사실을 소비 측에 드러낸다. 판정되지 않은 용어집을 판정된 것처럼
+  다루지 않는다.
+- 용어 추출 경로는 둘로 분리되어 있다. 부제 경로는 keywords 필드에서 위치 1:1 정렬로 뽑고 card_subtypes.json 88항목 정답셋으로 채점한다(실측 정밀도 1.000
+  / 재현율 0.909). 룰 경로는 text 필드에서 뽑으며 이 정답셋으로 채점하지 않는다. 룰 용어의 채점은 별도 수동 라벨링 정답셋 30-50개를 만들어 수행하며 아직 없다.
+- 룰 경로의 후보 상한은 Dice 전역 순위가 아니라 2단계다 — EN 용어를 빈도로 상위 N개 고른 뒤 각 EN 안에서 Dice 상위 k개를 남긴다. 전역 Dice 순위는 실측에서
+  진짜 용어를 잘라냈다(install→설치 17,436위, trash→폐기 55,471위로 상위 5,000 밖). Dice는 배타성을 재지 용어다움을 재지 않기 때문이다. 다만 하나의
+  EN 용어 안에서는 정확히 작동한다.
+- KO 어절은 kiwipiepy로 내용 형태소 어간까지 정규화되어 있다(설치할/설치된/설치한다 → 설치, 서버를 → 서버). 게임 기호 [credit]과 ASCII 괄호구는 자리표
+  치환으로 보호한다. 사용자 사전에 없는 도메인 복합어는 과분할된다(연구개발부 → 연구 개발 부). 이 정규화를 되돌리지 않는다.
+- 임베딩 모델 교체는 실측 후 기각했다. bge-m3는 dense 단독 0.4249→0.4162, BM25+dense 0.4250→0.4060으로 개선되지만 실제 출하 구성인 BM25+dense+char
+  융합에서는 0.3850→0.3858로 오히려 나빠지고 인코딩이 14배 느리다. MiniLM-L6-v2를 유지한다. 같은 실험을 반복하지 않는다.
+- TM 하이브리드 전체(BM25+dense+char+RRF)가 difflib 자명 기준선과 동률 0.3850이고 char TF-IDF 단독(0.3925)이 BM25+dense 조합
+  전부보다 낫다. 즉 검색 병목은 임베딩 모델이 아니라 융합 설계다. 이 페이즈에서 재설계하지는 않되, AC의 TM 유사도 임계를 특정 상수로 고정하지 않는다.
+- 측정에서 유도된 수치를 수용 기준에 상수로 박지 않는다. 관계로 쓰고 값은 실행 시점에 측정한다. phase1의 종료 게이트가 '중앙값 0.359 근방'이라는 상수를 넣었다가 무효가
+  됐다 — 0.359는 legacy pack/ 레이아웃의 다른 카드 집합에서 나온 값이고 v2 split의 실측 천장은 0.385다. 하드 게이트 3의 임계도 상수가 아니라 'TM-only
+  베이스라인 x 0.7'로 유도한다.
+- LLM 판정 배치는 청크 단위로 돌리고 청크마다 judgments.jsonl에 체크포인트를 적으며 프롬프트 지문을 함께 기록한다. 프롬프트가 바뀌면 지문이 달라져 낡은 판정이 자동
+  무효가 된다. 재시도 후에도 실패한 후보는 거부가 아니라 dropped로 따로 세고 체크포인트에 쓰지 않는다 — 모델이 내리지 않은 판정을 지어내지 않는다.
+- Bedrock 판정 모델은 us.anthropic.claude-haiku-4-5-20251001-v1:0을 쓴다. 단순 가부 분류를 대량 반복하는 작업이라 상위 모델은 과하다. AWS
+  자격증명은 환경변수에서 읽고 값을 코드·로그·커밋에 기록하지 않는다.
+- 구현 순서는 페이즈 분할로 고정돼 있다(원본 seed.yaml AC#22). 이 페이즈의 범위 밖 기능을 앞당겨 구현하지 않는다.
+acceptance_criteria:
+- description: '하드 게이트 1: hold-out 100장 기준 용어 준수율 >= 95%. 규칙 자동 채점. 미달 시 납품 거부.'
+  semantic_ac_key: ac_2ec6917b2446d6a8
+- description: '하드 게이트 2: hold-out 100장 기준, 정규화 대응표 기반 게임 기호 보존율 100%. 리터럴 멀티셋 비교로 구현하면 안 된다. [credit]
+    [click] [subroutine] [trash] [mu] [link] [recurring-credit] [interrupt] 및 팩션 아이콘은 1:1 보존을 강제하고, Trace[N]
+    ↔ <trace>추적 N</trace> 는 등가 규칙으로 등록하며, <strong> <em> <ul> <li> 마크업 태그는 게이트에서 제외한다. 근거: 기존 공식 KO 번역을
+    EN과 리터럴 비교하면 게임 기호 13.7%, 마크업 23.0%가 불일치하고, upstream 커밋 use <trace> in Asian languages (2016-06-01)가
+    이 표기 규약이 의도된 것임을 확인해 준다.'
+  semantic_ac_key: ac_cc593a1acc479824
+- description: '하드 게이트 3: hold-out 100장 기준, 공식 KO 번역 대비 정규화 편집거리(공백 정규화 후 1 - SequenceMatcher.ratio) 중앙값
+    <= 0.27. 근거: 동일 조건에서 TM 최근접 이웃만 사용한 LLM 0회 베이스라인 중앙값이 v2 split 실측으로 0.385이고, 그 30% 개선이 0.27이다. 주의:
+    이전 사양의 0.359와 임계 0.25는 폐기된 수치다 — legacy pack/ 레이아웃의 다른 카드 집합에서 나왔고 어떤 검색기로도 재현되지 않는다. tests/test_tm_baseline.py가
+    0.385 ± 0.025로 이 기준선을 고정하고 있다.'
+  semantic_ac_key: ac_08169c8cff978524
+- description: 세 하드 게이트 중 하나라도 미달이면 불합격으로 판정한다.
+  semantic_ac_key: ac_a314a0a2dfc49755
+- description: 관찰 지표(하드 게이트 아님)로 룰 텍스트 문형 일치 LLM-Judge >= 2.5/3, 플레이버 자연스러움 >= 2.0/3을 측정해 보고한다.
+  semantic_ac_key: ac_99a327b35174e0f8
+ontology_schema:
+  name: SessionSettledContract
+  description: Requirements the session already settled, crystallized without an interview. Every entry
+    is verbatim host-supplied material — no LLM composed any part of this Seed.
+  fields: []
+evaluation_principles:
+- name: settled_requirements
+  description: Evaluate only the session-settled requirements.
+  weight: 1.0
+exit_conditions:
+- name: settled_requirements_met
+  description: All session-settled requirements are satisfied.
+  criteria: Every listed acceptance criterion passes.
+metadata:
+  seed_id: seed_2b8394080002_phase2b
+  version: 1.0.0
+  created_at: '2026-09-17T01:30:00.000000Z'
+  ambiguity_score: 0.2
+  interview_id: session-context
+  parent_seed_id: seed_2b8394080002
+  generation_mode: normal
+  degraded: false
+  unresolved_slots: []
+  recovery_reason: null

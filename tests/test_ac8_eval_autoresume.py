@@ -91,6 +91,8 @@ def test_eval_autoresume_writes_header(tmp_path):
         n_cards=3,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, eval_header, _ = _parse_jsonl_output(out)
     assert eval_header is not None, (
@@ -110,6 +112,8 @@ def test_eval_autoresume_header_has_required_hitl_stats_keys(tmp_path):
         n_cards=3,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, eval_header, _ = _parse_jsonl_output(out)
     assert eval_header is not None
@@ -131,6 +135,8 @@ def test_eval_autoresume_is_never_human_approved(tmp_path):
         n_cards=3,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, eval_header, _ = _parse_jsonl_output(out)
     assert eval_header is not None
@@ -149,6 +155,8 @@ def test_eval_autoresume_records_carry_eval_flags(tmp_path):
         n_cards=3,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, _, records = _parse_jsonl_output(out)
     assert len(records) >= 1, "eval_autoresume run must produce at least 1 card record"
@@ -173,6 +181,8 @@ def test_eval_autoresume_auto_approved_count_consistent_with_records(tmp_path):
         n_cards=5,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, eval_header, records = _parse_jsonl_output(out)
     assert eval_header is not None
@@ -197,6 +207,8 @@ def test_eval_autoresume_trigger_count_consistent_with_interrupted_records(tmp_p
         n_cards=5,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, eval_header, records = _parse_jsonl_output(out)
     assert eval_header is not None
@@ -220,6 +232,8 @@ def test_eval_autoresume_mode_absent_in_operational_output(tmp_path):
         n_cards=2,
         output_path=out,
         eval_autoresume=False,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, eval_header, _ = _parse_jsonl_output(out)
     assert eval_header is None, (
@@ -250,6 +264,8 @@ def test_eval_autoresume_auto_responder_does_not_consult_ko_text(tmp_path):
         n_cards=3,
         output_path=out,
         eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, _, records = _parse_jsonl_output(out)
     auto_approved_records = [r for r in records if r.get("auto_approved") is True]
@@ -442,6 +458,8 @@ def test_operational_mode_no_eval_autoresume_flag_in_records(tmp_path):
         n_cards=2,
         output_path=out,
         eval_autoresume=False,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
     )
     _, _, records = _parse_jsonl_output(out)
     for rec in records:

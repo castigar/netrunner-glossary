@@ -425,6 +425,7 @@ def test_run_pipeline_writes_threshold_derivation_to_output(tmp_path):
         assets_dir=assets_dir,
         n_cards=2,
         output_path=out_path,
+        llm_model=None,
     )
 
     assert out_path.exists(), "Pipeline must produce an output file"
@@ -598,3 +599,114 @@ def test_sentence_first_uppercase_is_recording_not_blocking(small_tm_index, tmp_
         candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
         # "frobbulate" may appear as recording-type (depending on other triggers)
         # The key assertion is that no interrupt fired — presence in candidates is a bonus.
+
+
+# ===========================================================================
+# Part 6: Markup tag names are neither candidate type; guard classifies,
+#         coordinator decides blocking.
+#
+# AC4: "마크업 태그명(strong·em·trace 등)은 원문의 단어가 아니므로 어느 쪽 후보도
+#       아니다 — 토크나이저가 태그에서 태그명을 뽑는 것은 결함이며 태그를 먼저
+#       제거해 고친다.  분류는 new_term_guard가 하고 차단 여부 판정은
+#       hitl_interrupt가 한다."
+# ===========================================================================
+
+
+def test_markup_tag_names_are_neither_blocking_nor_recording():
+    """Tag names from markup must not appear as new-term candidates of either type.
+
+    Non-vacuous: the same text carries a genuine blocking token ("Runner", uppercase
+    non-sentence-first) and genuine recording tokens, so the tokenizer is provably
+    still running.  Only the tag names are absent.  Removing _strip_markup would
+    surface 'strong'/'trace' and fail this test.
+    """
+    from new_term_guard import check_new_terms
+
+    flat: GlossaryFlat = {"run": ("런", "official")}
+    text = "<strong>Do 1 net damage.</strong> <trace>The Runner suffers.</trace>"
+
+    result = check_new_terms(text, flat, True, route="rule")
+    blocking = {t.en_term for t in result.blocking_new_terms}
+    recording = {t.en_term for t in result.recording_new_terms}
+    both = blocking | recording
+
+    assert "strong" not in both, f"Markup tag name 'strong' leaked into candidates: {both}"
+    assert "trace" not in both, f"Markup tag name 'trace' leaked into candidates: {both}"
+    # Proof the tokenizer still ran over the tag-stripped content:
+    assert "runner" in blocking, (
+        f"'Runner' (uppercase, non-sentence-first) must still be blocking-type; got {blocking}"
+    )
+    assert "damage" in recording, (
+        f"Ordinary content words must still be recording-type; got {recording}"
+    )
+
+
+def test_markup_tag_name_not_written_to_new_term_candidates(small_tm_index, tmp_path):
+    """Graph-level: tag names never reach new_term_candidates.json.
+
+    The card's content words ARE recorded, so the store path is provably exercised;
+    only the tag name is missing.
+    """
+    import json
+
+    flat: GlossaryFlat = {"run": ("런", "official")}
+    candidates_path = tmp_path / "new_term_candidates.json"
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=True,
+        llm=_MockLLM("카드 2장을 뽑는다."),
+        conflict_entries=[],
+        tm_threshold=0.0,  # disable trigger ④
+        new_term_candidates_path=candidates_path,
+    )
+    result = graph.invoke({
+        "card_id": "markup_card",
+        "en_rule": "<strong>Draw 2 cards.</strong>",
+    })
+
+    assert "__interrupt__" not in result, (
+        "A card whose only unregistered tokens are recording-type must pass through, "
+        "even when wrapped in markup."
+    )
+    assert candidates_path.exists(), "Recording-type terms must be stored at detection time"
+    stored = {c["en_term"] for c in json.loads(candidates_path.read_text(encoding="utf-8"))}
+    assert "cards" in stored or "draw" in stored, (
+        f"Content words inside the markup must be recorded; got {stored}"
+    )
+    assert "strong" not in stored, (
+        f"Markup tag name 'strong' must never be stored as a new-term candidate; got {stored}"
+    )
+
+
+def test_guard_classifies_and_coordinator_decides_blocking():
+    """Division of labour: new_term_guard classifies, hitl_interrupt decides blocking.
+
+    The guard reports passed=False (it found unregistered terms) while the
+    coordinator does NOT interrupt, because those terms are recording-type.
+    A design where the guard itself decided blocking would make these two
+    results agree, failing this test.
+    """
+    from hitl_interrupt import check_hitl_triggers
+    from new_term_guard import check_new_terms
+
+    flat: GlossaryFlat = {"credits": ("크레딧", "extracted")}
+    en = "Draw 2 cards and gain 2 credits."
+    ko = "카드 2장을 뽑고 크레딧 2를 얻는다."
+
+    guard = check_new_terms(en, flat, True, route="rule")
+    assert guard.passed is False, "Guard must report the unregistered terms it found"
+    assert guard.blocking_new_terms == [], "No blocking-type token in this text"
+    assert {t.en_term for t in guard.recording_new_terms} >= {"draw", "cards"}
+
+    decision = check_hitl_triggers(
+        en, ko, glossary=flat, llm_judged=True, tm_top_score=None, route="rule"
+    )
+    assert decision.should_interrupt is False, (
+        "Coordinator must not block on recording-type terms even though the guard "
+        f"reported them: triggers={[t.reason for t in decision.triggers]}"
+    )
+    assert {"draw", "cards"} <= set(decision.recording_new_terms), (
+        f"Coordinator must surface recording terms for detection-time storage; "
+        f"got {decision.recording_new_terms}"
+    )

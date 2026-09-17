@@ -8,6 +8,11 @@ Tests assert that:
 - report.obs is populated when pre-computed judgments are supplied.
 - print_evaluation_report() produces non-empty output containing gate verdicts.
 - CLI entry point (main) exits cleanly with skip-llm-judge and TM baseline.
+- Changing predictions changes Gate 1 compliance_rate (non-tautological, AC6b).
+- Changing predictions changes Gate 2 preservation_rate (non-tautological, AC6b).
+- _tm_predictions does NOT substitute ko_text for no-hit cards (AC6c reference leakage ban).
+- EvaluationReport carries pending_count and empty_prediction_count fields (AC6e).
+- print_evaluation_report shows llm_judged status (AC6f).
 
 Note: tests run without Bedrock credentials — LLM judge calls use pre-computed
 judgments via score_from_judgments to avoid AWS dependency.
@@ -279,3 +284,181 @@ def test_main_runs_without_error_skip_llm_judge(tmp_path, capsys):
 
     captured = capsys.readouterr()
     assert "게이트" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# AC6(b): predictions affect Gate 1 and Gate 2 rates — non-tautological
+# ---------------------------------------------------------------------------
+
+
+def test_gate1_compliance_rate_changes_when_predictions_change(hold_out_cards):
+    """Gate 1 compliance_rate must differ between reference and all-empty predictions.
+
+    This is non-tautological: it would fail if score_hold_out ignores the predictions
+    argument and always reads card['ko_text'] from the file.
+    """
+    n = len(hold_out_cards)
+    # Use reference ko_text — baseline compliance
+    ref_preds = [c["ko_text"] for c in hold_out_cards]
+    report_ref = run_evaluation(HOLD_OUT, GLOSSARY, ref_preds, skip_llm_judge=True)
+    rate_ref = report_ref.verdict.gate1.compliance_rate
+
+    # Use all-empty predictions — no KO term present, so all occurrences are violations
+    empty_preds = [""] * n
+    report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
+    rate_empty = report_empty.verdict.gate1.compliance_rate
+
+    # The rates must differ: empty predictions should have worse compliance
+    # (when glossary terms appear in EN text, empty KO has no compliant translation)
+    assert rate_empty != rate_ref, (
+        f"Gate 1 rate unchanged: ref={rate_ref:.4f}, empty={rate_empty:.4f}. "
+        "score_hold_out is likely ignoring the predictions argument."
+    )
+    # Empty predictions should have ≤ reference compliance (never better)
+    assert rate_empty <= rate_ref, (
+        f"Empty predictions produced higher compliance ({rate_empty:.4f}) than "
+        f"reference ({rate_ref:.4f}) — unexpected."
+    )
+
+
+def test_gate2_preservation_rate_changes_when_predictions_change(hold_out_cards):
+    """Gate 2 preservation_rate must differ between reference and all-empty predictions.
+
+    This is non-tautological: it would fail if score_hold_out ignores the predictions
+    argument and always reads card['ko_text'] from the file.
+    """
+    n = len(hold_out_cards)
+    # Reference predictions — measured at 0.95 (5 cards have symbol mismatches)
+    ref_preds = [c["ko_text"] for c in hold_out_cards]
+    report_ref = run_evaluation(HOLD_OUT, GLOSSARY, ref_preds, skip_llm_judge=True)
+    rate_ref = report_ref.verdict.gate2.preservation_rate  # 0.95
+
+    # All-empty predictions — KO has no symbols, any EN symbol counts as missing
+    empty_preds = [""] * n
+    report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
+    rate_empty = report_empty.verdict.gate2.preservation_rate
+
+    # Empty predictions have no KO symbols, so cards with EN symbols all fail
+    assert rate_empty != rate_ref, (
+        f"Gate 2 rate unchanged: ref={rate_ref:.4f}, empty={rate_empty:.4f}. "
+        "score_hold_out is likely ignoring the predictions argument."
+    )
+    assert rate_empty < rate_ref, (
+        f"Empty predictions produced higher preservation ({rate_empty:.4f}) than "
+        f"reference ({rate_ref:.4f}) — unexpected."
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC6(c): reference leakage ban — _tm_predictions must not substitute ko_text
+# ---------------------------------------------------------------------------
+
+
+def test_tm_predictions_no_reference_leakage(tmp_path):
+    """_tm_predictions must return "" for cards with no TM hit — never ko_text.
+
+    When the training corpus is empty, every query returns no result.
+    The prediction list must contain only empty strings (not the hold-out ko_text).
+    """
+    # Write a hold-out with 3 cards
+    hold_out_cards = [
+        {"id": "c1", "en_text": "Install a program.", "ko_text": "프로그램을 설치한다."},
+        {"id": "c2", "en_text": "Make a run.", "ko_text": "런을 수행한다."},
+        {"id": "c3", "en_text": "Gain credits.", "ko_text": "크레딧을 얻는다."},
+    ]
+    hold_out_path = tmp_path / "hold_out.json"
+    hold_out_path.write_text(json.dumps(hold_out_cards, ensure_ascii=False), encoding="utf-8")
+
+    # Empty training set → TM search always returns no hits
+    train_path = tmp_path / "train.json"
+    train_path.write_text("[]", encoding="utf-8")
+
+    preds, empty_count = _tm_predictions(hold_out_path, train_path)
+
+    assert len(preds) == 3
+    assert empty_count == 3, f"Expected all 3 predictions empty, got empty_count={empty_count}"
+    for i, pred in enumerate(preds):
+        ko_ref = hold_out_cards[i]["ko_text"]
+        assert pred != ko_ref, (
+            f"Card {i}: prediction '{pred}' equals ko_text '{ko_ref}' — reference leakage!"
+        )
+        assert pred == "", (
+            f"Card {i}: expected empty string, got '{pred}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# AC6(e): EvaluationReport carries pending_count and pending_ratio fields
+# ---------------------------------------------------------------------------
+
+
+def test_evaluation_report_has_pending_count_field(reference_predictions):
+    """EvaluationReport must have pending_count and pending_ratio fields."""
+    report = run_evaluation(
+        HOLD_OUT, GLOSSARY, reference_predictions,
+        skip_llm_judge=True,
+        pending_count=5,
+        pending_ratio=0.05,
+    )
+    assert report.pending_count == 5
+    assert report.pending_ratio == pytest.approx(0.05)
+
+
+def test_evaluation_report_has_empty_prediction_count_field(reference_predictions):
+    """EvaluationReport must have empty_prediction_count field."""
+    report = run_evaluation(
+        HOLD_OUT, GLOSSARY, reference_predictions,
+        skip_llm_judge=True,
+        empty_prediction_count=3,
+    )
+    assert report.empty_prediction_count == 3
+
+
+def test_evaluation_report_default_pending_zero(reference_predictions):
+    """EvaluationReport pending fields default to zero when not provided."""
+    report = run_evaluation(HOLD_OUT, GLOSSARY, reference_predictions, skip_llm_judge=True)
+    assert report.pending_count == 0
+    assert report.pending_ratio == 0.0
+    assert report.empty_prediction_count == 0
+
+
+# ---------------------------------------------------------------------------
+# AC6(f): print_evaluation_report shows llm_judged status
+# ---------------------------------------------------------------------------
+
+
+def test_print_evaluation_report_includes_llm_judged_status(reference_predictions, capsys):
+    """print_evaluation_report must include 용어집 LLM 판정 status text (AC6f)."""
+    report = run_evaluation(HOLD_OUT, GLOSSARY, reference_predictions, skip_llm_judge=True)
+    print_evaluation_report(report)
+    captured = capsys.readouterr()
+    assert "LLM 판정" in captured.out, (
+        "Expected llm_judged status in output (AC6f Gate1Result.llm_judged disclosure)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AC6(d): EvaluationReport carries tm_baseline_median and derived threshold
+# ---------------------------------------------------------------------------
+
+
+def test_evaluation_report_carries_tm_baseline_and_derived_threshold(reference_predictions):
+    """When tm_baseline_median is provided, gate3_derived_threshold must be computed."""
+    import gate3_edit_distance
+
+    baseline = 0.385  # typical TM-only baseline
+    report = run_evaluation(
+        HOLD_OUT, GLOSSARY, reference_predictions,
+        skip_llm_judge=True,
+        tm_baseline_median=baseline,
+    )
+    assert report.tm_baseline_median == pytest.approx(baseline)
+    expected_threshold = baseline * gate3_edit_distance.THRESHOLD_FACTOR
+    assert report.gate3_derived_threshold == pytest.approx(expected_threshold)
+
+
+def test_evaluation_report_no_derived_threshold_when_no_baseline(reference_predictions):
+    """When tm_baseline_median is not provided, gate3_derived_threshold must be None."""
+    report = run_evaluation(HOLD_OUT, GLOSSARY, reference_predictions, skip_llm_judge=True)
+    assert report.tm_baseline_median is None
+    assert report.gate3_derived_threshold is None

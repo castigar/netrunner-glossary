@@ -53,12 +53,16 @@ class Gate1Result:
 def score_hold_out(
     hold_out_path: str | Path,
     glossary_path: str | Path,
+    predictions: list[str] | None = None,
 ) -> Gate1Result:
     """Score Hard Gate 1 over the hold-out set.
 
     Args:
         hold_out_path: Path to data/hold_out.json (list of {id, en_text, ko_text}).
         glossary_path: Path to assets/glossary.json.
+        predictions: Optional KO predictions, one per card in hold_out order.
+            When provided, each prediction is scored instead of card['ko_text'].
+            Enables pipeline output scoring (gate_input_contract AC6).
 
     Returns:
         :class:`Gate1Result` with ``passed=True`` iff compliance_rate >= 0.95.
@@ -66,14 +70,19 @@ def score_hold_out(
     glossary, llm_judged = load_flat_glossary(glossary_path)
     cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
+    if predictions is not None and len(predictions) != len(cards):
+        raise ValueError(
+            f"predictions length {len(predictions)} != hold-out length {len(cards)}"
+        )
+
     card_results: list[CardCompliance] = []
     total_checks = 0
     total_violations = 0
 
-    for card in cards:
+    for i, card in enumerate(cards):
         card_id = card.get("id", "")
         en_text = card.get("en_text", "")
-        ko_text = card.get("ko_text", "")
+        ko_text = predictions[i] if predictions is not None else card.get("ko_text", "")
 
         result = check_glossary_compliance(en_text, ko_text, glossary, llm_judged)
 

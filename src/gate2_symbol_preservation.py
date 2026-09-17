@@ -132,25 +132,37 @@ def _check_card(card_id: str, en_text: str, ko_text: str) -> CardSymbolResult:
     )
 
 
-def score_hold_out(hold_out_path: str | Path) -> Gate2Result:
+def score_hold_out(
+    hold_out_path: str | Path,
+    predictions: list[str] | None = None,
+) -> Gate2Result:
     """Score Hard Gate 2 over the hold-out set.
 
     Args:
         hold_out_path: Path to data/hold_out.json (list of {id, en_text, ko_text}).
+        predictions: Optional KO predictions, one per card in hold_out order.
+            When provided, each prediction is scored instead of card['ko_text'].
+            Enables pipeline output scoring (gate_input_contract AC6).
 
     Returns:
         :class:`Gate2Result` with ``passed=True`` iff all cards preserve symbols.
     """
     cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
+    if predictions is not None and len(predictions) != len(cards):
+        raise ValueError(
+            f"predictions length {len(predictions)} != hold-out length {len(cards)}"
+        )
+
     card_results: list[CardSymbolResult] = []
     cards_passed = 0
 
-    for card in cards:
+    for i, card in enumerate(cards):
+        ko_text = predictions[i] if predictions is not None else card.get("ko_text", "")
         result = _check_card(
             card_id=card.get("id", ""),
             en_text=card.get("en_text", ""),
-            ko_text=card.get("ko_text", ""),
+            ko_text=ko_text,
         )
         card_results.append(result)
         if result.passed:

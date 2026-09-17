@@ -1350,6 +1350,11 @@ dev = [
     { name = "pytest" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=2.0" },
@@ -1364,6 +1369,9 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=3.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "networkx"

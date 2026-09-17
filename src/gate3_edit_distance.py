@@ -1,0 +1,131 @@
+"""gate3_edit_distance.py — Hard Gate 3: normalized edit distance median.
+
+SERVICE.md §5, gate 3:
+  For each card in the hold-out set, compute normalized edit distance between
+  the predicted KO translation and the official KO reference:
+
+      distance = 1 - SequenceMatcher.ratio(normalize_ws(pred), normalize_ws(ref))
+
+  The gate passes when median(distances) <= THRESHOLD.
+
+THRESHOLD derivation:
+  TM-only baseline (BM25+dense+char, v2 split) median = 0.385 (pinned by
+  tests/test_tm_baseline.py ± 0.025). A 30% improvement over the baseline
+  gives 0.385 * 0.70 ≈ 0.27.
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
+from pathlib import Path
+
+import numpy as np
+
+# Derived from TM-only baseline (0.385) × 0.70 — see module docstring.
+THRESHOLD = 0.27
+
+# TM-only baseline median for reference (pinned by test_tm_baseline.py).
+TM_BASELINE_MEDIAN = 0.385
+THRESHOLD_FACTOR = 0.70  # gate requires this fraction of the baseline
+
+
+@dataclass
+class CardDistanceResult:
+    """Edit distance result for a single hold-out card."""
+
+    card_id: str
+    distance: float   # 1 - SequenceMatcher.ratio(pred, ref) after ws normalization
+    pred_text: str
+    ref_text: str
+
+
+@dataclass
+class Gate3Result:
+    """Aggregated Hard Gate 3 result over all hold-out cards."""
+
+    passed: bool
+    median_distance: float
+    mean_distance: float
+    min_distance: float
+    max_distance: float
+    n: int
+    threshold: float = THRESHOLD
+    card_results: list[CardDistanceResult] = field(default_factory=list)
+
+
+def _normalize_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _edit_distance(pred: str, ref: str) -> float:
+    """Normalized edit distance: 1 - SequenceMatcher.ratio after whitespace normalization."""
+    return 1.0 - SequenceMatcher(None, _normalize_ws(pred), _normalize_ws(ref)).ratio()
+
+
+def score_hold_out(
+    hold_out_path: str | Path,
+    predictions: list[str],
+) -> Gate3Result:
+    """Score Hard Gate 3 over the hold-out set.
+
+    Args:
+        hold_out_path: Path to data/hold_out.json (list of {id, en_text, ko_text}).
+            The ``ko_text`` field is the official reference translation.
+        predictions: Agent-generated KO translations, one per card in the same
+            order as hold_out.json.  Length must equal len(hold_out).
+
+    Returns:
+        :class:`Gate3Result` with ``passed=True`` iff median_distance <= 0.27.
+    """
+    cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
+
+    if len(cards) != len(predictions):
+        raise ValueError(
+            f"predictions length {len(predictions)} != hold-out length {len(cards)}"
+        )
+
+    card_results: list[CardDistanceResult] = []
+    for card, pred in zip(cards, predictions):
+        ref = card.get("ko_text", "")
+        dist = _edit_distance(pred, ref)
+        card_results.append(
+            CardDistanceResult(
+                card_id=card.get("id", ""),
+                distance=dist,
+                pred_text=pred,
+                ref_text=ref,
+            )
+        )
+
+    arr = np.array([r.distance for r in card_results], dtype=np.float64)
+    median = float(np.median(arr)) if len(arr) > 0 else 0.0
+
+    return Gate3Result(
+        passed=median <= THRESHOLD,
+        median_distance=median,
+        mean_distance=float(np.mean(arr)) if len(arr) > 0 else 0.0,
+        min_distance=float(arr.min()) if len(arr) > 0 else 0.0,
+        max_distance=float(arr.max()) if len(arr) > 0 else 0.0,
+        n=len(card_results),
+        threshold=THRESHOLD,
+        card_results=card_results,
+    )
+
+
+def score_self_reference(hold_out_path: str | Path) -> Gate3Result:
+    """Score hold-out using the official KO translations as predictions.
+
+    This is the oracle upper bound: a perfect agent that reproduces the official
+    translations exactly should achieve median_distance == 0.0.
+
+    Args:
+        hold_out_path: Path to data/hold_out.json.
+
+    Returns:
+        :class:`Gate3Result` (always passes since distance == 0 <= THRESHOLD).
+    """
+    cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
+    predictions = [card.get("ko_text", "") for card in cards]
+    return score_hold_out(hold_out_path, predictions)

@@ -6,8 +6,11 @@ Verified tools:
   - lookup_pattern(text)       EN rule sentence → matching KO template
   - check_translation(en, ko)  EN/KO pair → combined violation report
 
-All four functions are directly callable (fastmcp @mcp.tool() does not wrap
-their signature), so tests import mcp_server and call them as plain Python.
+All four functions are directly callable, so tests import mcp_server and call
+them as plain Python. That holds because mcp_server registers them with
+``mcp.tool()(fn)`` after the def rather than with the ``@mcp.tool()``
+decorator — the decorator rebinds the module-level name to a FunctionTool
+object, which is not callable.
 """
 from __future__ import annotations
 

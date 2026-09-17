@@ -106,7 +106,6 @@ def _get_tm_index():
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
 def lookup_term(en: str) -> str:
     """Look up the registered KO translation for an EN game term.
 
@@ -135,7 +134,6 @@ def lookup_term(en: str) -> str:
     return json.dumps({"found": False, "en": en}, ensure_ascii=False)
 
 
-@mcp.tool()
 def search_tm(text: str) -> str:
     """Search translation memory for similar past card EN/KO pairs.
 
@@ -161,7 +159,6 @@ def search_tm(text: str) -> str:
     return json.dumps(results, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
 def lookup_pattern(text: str) -> str:
     """Look up the KO sentence template for an EN rule sentence.
 
@@ -179,7 +176,6 @@ def lookup_pattern(text: str) -> str:
     return json.dumps({"found": True, **match.to_dict()}, ensure_ascii=False)
 
 
-@mcp.tool()
 def check_translation(en: str, ko: str) -> str:
     """Check an EN/KO card text pair for translation violations.
 
@@ -212,6 +208,24 @@ def check_translation(en: str, ko: str) -> str:
         ensure_ascii=False,
         indent=2,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tool registration
+#
+# Registered here instead of with the ``@mcp.tool()`` decorator on each def.
+# The decorator rebinds the module-level name to a FunctionTool object, which is
+# not callable, so ``mcp_server.lookup_term(...)`` raised
+# ``TypeError: 'FunctionTool' object is not callable`` — for tests and for any
+# other module importing these functions. Calling the registrar without binding
+# its return value registers the identical tool and leaves the plain function
+# importable. Add new tools to this list.
+# ---------------------------------------------------------------------------
+
+mcp.tool()(lookup_term)
+mcp.tool()(search_tm)
+mcp.tool()(lookup_pattern)
+mcp.tool()(check_translation)
 
 
 if __name__ == "__main__":

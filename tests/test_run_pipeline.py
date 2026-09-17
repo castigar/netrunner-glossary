@@ -39,6 +39,7 @@ def real_pipeline_records(tmp_path_factory) -> list[dict]:
         assets_dir=ASSETS_DIR,
         n_cards=3,
         output_path=out,
+        llm_model=None,
     )
     return records
 
@@ -137,6 +138,7 @@ def test_pipeline_output_written_to_disk(tmp_path):
         assets_dir=ASSETS_DIR,
         n_cards=1,
         output_path=out,
+        llm_model=None,
     )
     assert out.exists(), "pipeline output file must be created"
     lines = out.read_text(encoding="utf-8").splitlines()

@@ -65,11 +65,11 @@ class CardState(TypedDict, total=False):
     en_rule: str       # source EN rule text  (card["text"])
     en_flavor: str     # source EN flavor text (card["flavor"])
     text_type: Literal["rule", "flavor"]   # set by the routing node
-    # AC2 fields: draft generation outputs
-    draft_ko: str                    # draft Korean translation
-    tm_hits: list[dict]              # TM search results (top-k)
-    tm_confidence: float             # RRF score of top-1 TM hit
-    glossary_terms: dict[str, str]   # EN term -> KO equivalent (relevant subset)
+    # AC2 fields: draft generation outputs — draft_record_contract (SERVICE.md §6)
+    draft_ko: str                 # draft Korean translation
+    tm_hits: list[dict]           # TM search results: [{id, en_text, score}]
+    tm_confidence: float          # RRF score of top-1 TM hit (0.0 if no hits)
+    injected_terms: list[dict]    # per-term provenance: [{en, ko, source, llm_judged}]
     # AC3 fields: guardrail validation outputs
     guard_passed: bool               # True when all 5 guards pass
     guard_violations: list           # list of violation dicts from failed guards
@@ -112,30 +112,48 @@ def _route_decision(state: CardState) -> Literal["process_rule", "process_flavor
 # ---------------------------------------------------------------------------
 
 
-def _extract_relevant_terms(source_text: str, flat_glossary: GlossaryFlat) -> dict[str, str]:
+def _extract_relevant_terms(
+    source_text: str,
+    flat_glossary: GlossaryFlat,
+    llm_judged: bool,
+) -> list[dict]:
     """Return glossary terms whose EN form appears in source_text.
 
     Uses word-boundary matching so "install" does not match "installation".
-    Returns a dict of EN term → KO equivalent (dropping the source section).
+    Returns a list of per-term dicts carrying provenance:
+        [{en, ko, source(official|subtype_extracted|extracted), llm_judged}]
+
+    Per-term llm_judged:
+      - official terms are always authoritative (llm_judged=True).
+      - extracted terms inherit the global llm_judged flag.
+      - subtype_extracted terms are validated by precision/recall (llm_judged=True).
     """
-    result: dict[str, str] = {}
-    for en_term, (ko_term, _section) in flat_glossary.items():
+    result: list[dict] = []
+    for en_term, (ko_term, source) in flat_glossary.items():
         pattern = r"(?<!\w)" + re.escape(en_term) + r"(?!\w)"
         if re.search(pattern, source_text, re.IGNORECASE):
-            result[en_term] = ko_term
+            per_term_judged = True if source in ("official", "subtype_extracted") else llm_judged
+            result.append({
+                "en": en_term,
+                "ko": ko_term,
+                "source": source,
+                "llm_judged": per_term_judged,
+            })
     return result
 
 
 def _build_draft_prompt(
     wrapped_text: str,
     tm_hits: list[dict],
-    glossary_terms: dict[str, str],
+    injected_terms: list[dict],
     llm_judged: bool,
 ) -> str:
     """Build a structured prompt for the draft translation LLM call.
 
-    The card text arrives already wrapped by safe_wrap (``<card-text>…</card-text>``),
-    so the model treats it as data, not instructions.
+    The card text arrives already wrapped by safe_wrap (``<card-text>…</card-text>``).
+    TM hit EN/KO texts are also wrapped so retrieved card bodies are treated as data.
+    Non-official terms are marked with their source and validation status so the
+    model can weight them appropriately (AC2d: term provenance must be visible).
     """
     lines: list[str] = [
         "You are an Android: Netrunner card game translator (EN→KO).",
@@ -145,17 +163,30 @@ def _build_draft_prompt(
         "Do not add effects or conditions that are not in the source text.",
     ]
 
-    if glossary_terms:
-        judged_note = "" if llm_judged else " (rule terms — not yet LLM-validated)"
-        lines.append(f"\n## Glossary{judged_note}")
-        for en, ko in sorted(glossary_terms.items()):
-            lines.append(f"  {en} → {ko}")
+    if injected_terms:
+        # Separate official (fully trusted) from non-official (provenance-marked).
+        official = [t for t in injected_terms if t["source"] == "official"]
+        non_official = [t for t in injected_terms if t["source"] != "official"]
+
+        if official:
+            lines.append("\n## Official Glossary")
+            for t in sorted(official, key=lambda x: x["en"]):
+                lines.append(f"  {t['en']} → {t['ko']}")
+
+        if non_official:
+            validation_note = "" if llm_judged else " (rule terms — not yet LLM-validated)"
+            lines.append(f"\n## Extracted Glossary{validation_note}")
+            for t in sorted(non_official, key=lambda x: x["en"]):
+                status = "validated" if t["llm_judged"] else "not yet validated"
+                lines.append(f"  {t['en']} → {t['ko']}  [{t['source']}, {status}]")
 
     if tm_hits:
+        # AC2c: safe_wrap applied to TM hit EN/KO texts — retrieved card bodies
+        # are also card content and must not bypass injection defense.
         lines.append("\n## Translation Memory (similar cards for reference)")
         for i, hit in enumerate(tm_hits, 1):
-            lines.append(f"  [{i}] EN: {hit['en_text']}")
-            lines.append(f"       KO: {hit['ko_text']}")
+            lines.append(f"  [{i}] EN: {safe_wrap(hit['en_text'])}")
+            lines.append(f"       KO: {safe_wrap(hit['ko_text'])}")
 
     lines.append("\n## Card to translate")
     lines.append(wrapped_text)
@@ -172,25 +203,28 @@ def generate_draft(
     llm_judged: bool,
     llm: Any,
     k: int = 3,
-) -> tuple[str, list[dict], float, dict[str, str]]:
+) -> tuple[str, list[dict], float, list[dict]]:
     """Generate a draft Korean translation for source_text.
 
     Steps:
       1. Wrap source_text with safe_wrap (injection protection).
       2. Search TM index for the top-k similar cards.
-      3. Extract glossary terms relevant to source_text.
-      4. Build a structured prompt and call the LLM.
+      3. Extract glossary terms relevant to source_text (with provenance).
+      4. Build a structured prompt (TM hits also safe-wrapped) and call the LLM.
 
     Returns:
-        (draft_ko, tm_hits, tm_confidence, glossary_terms)
-        where tm_confidence is the RRF score of the top-1 hit (0.0 if none).
+        (draft_ko, tm_hits, tm_confidence, injected_terms)
+        where:
+          - tm_hits: list of {id, en_text, score} dicts from TM search.
+          - tm_confidence: RRF score of top-1 hit (0.0 if no hits).
+          - injected_terms: list of {en, ko, source, llm_judged} per matched term.
     """
     wrapped = safe_wrap(source_text)
     tm_hits = tm_index.search(source_text, k=k)
     tm_confidence = tm_hits[0]["score"] if tm_hits else 0.0
-    glossary_terms = _extract_relevant_terms(source_text, flat_glossary)
+    injected_terms = _extract_relevant_terms(source_text, flat_glossary, llm_judged)
 
-    prompt = _build_draft_prompt(wrapped, tm_hits, glossary_terms, llm_judged)
+    prompt = _build_draft_prompt(wrapped, tm_hits, injected_terms, llm_judged)
     response = llm.invoke(prompt)
     # Support both BaseChatModel (response.content) and plain string returns.
     draft_ko = (
@@ -199,7 +233,7 @@ def generate_draft(
         else str(response).strip()
     )
 
-    return draft_ko, tm_hits, tm_confidence, glossary_terms
+    return draft_ko, tm_hits, tm_confidence, injected_terms
 
 
 def _make_process_node(
@@ -208,8 +242,18 @@ def _make_process_node(
     flat_glossary: GlossaryFlat,
     llm_judged: bool,
     llm: Any,
+    inject_glossary: bool = True,
 ) -> Callable[[CardState], CardState]:
-    """Return a LangGraph node function that generates a draft for *source_field*."""
+    """Return a LangGraph node function that generates a draft for *source_field*.
+
+    Routing decision (AC2e) — both rule and flavor branches use the same
+    flat_glossary injection when *inject_glossary* is True (default).
+    Rationale: flavor text frequently references game concepts (e.g. "install",
+    "run") that require consistent translation, so the same term-matching logic
+    applies.  Callers may pass inject_glossary=False to disable injection for
+    flavor text; the decision must be explicit rather than implicit.
+    """
+    _glossary = flat_glossary if inject_glossary else {}
 
     def process_node(state: CardState) -> CardState:
         source = (state.get(source_field) or "").strip()  # type: ignore[arg-type]
@@ -218,7 +262,7 @@ def _make_process_node(
         draft, hits, confidence, terms = generate_draft(
             source,
             tm_index=tm_index,
-            flat_glossary=flat_glossary,
+            flat_glossary=_glossary,
             llm_judged=llm_judged,
             llm=llm,
         )
@@ -227,7 +271,7 @@ def _make_process_node(
             "draft_ko": draft,
             "tm_hits": hits,
             "tm_confidence": confidence,
-            "glossary_terms": terms,
+            "injected_terms": terms,
         }
 
     return process_node
@@ -425,6 +469,7 @@ def build_translation_graph(
     checkpointer: Any = None,
     approved_store_path: Path | str = "approved.jsonl",
     new_term_candidates_path: Path | str = "new_term_candidates.json",
+    flavor_inject_glossary: bool = True,
 ) -> StateGraph:
     """Build and return the compiled translation graph.
 
@@ -461,6 +506,11 @@ def build_translation_graph(
                          cannot be resumed in the same thread.
         approved_store_path:      Path to approved.jsonl (AC5).
         new_term_candidates_path: Path to new_term_candidates.json (AC5).
+        flavor_inject_glossary:   Whether to inject rule glossary terms for flavor
+                                  text (AC2e routing decision). Default True: flavor
+                                  text can reference game terms that need consistent
+                                  translation; pass False to disable injection for
+                                  flavor cards explicitly.
 
     Returns:
         A compiled :class:`langgraph.graph.StateGraph` ready to invoke.
@@ -471,8 +521,8 @@ def build_translation_graph(
 
     deps_ready = tm_index is not None and flat_glossary is not None and llm is not None
     if deps_ready:
-        rule_node = _make_process_node("en_rule", tm_index, flat_glossary, llm_judged, llm)  # type: ignore[arg-type]
-        flavor_node = _make_process_node("en_flavor", tm_index, flat_glossary, llm_judged, llm)  # type: ignore[arg-type]
+        rule_node = _make_process_node("en_rule", tm_index, flat_glossary, llm_judged, llm, inject_glossary=True)  # type: ignore[arg-type]
+        flavor_node = _make_process_node("en_flavor", tm_index, flat_glossary, llm_judged, llm, inject_glossary=flavor_inject_glossary)  # type: ignore[arg-type]
     else:
         rule_node = process_rule
         flavor_node = process_flavor

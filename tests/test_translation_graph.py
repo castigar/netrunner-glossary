@@ -43,6 +43,7 @@ from translation_graph import (
     CardState,
     _build_draft_prompt,
     _extract_relevant_terms,
+    _make_process_node,
     _make_validate_node,
     _route_decision,
     _validate_route,
@@ -231,33 +232,56 @@ class _MockLLM:
 
 
 def test_extract_relevant_terms_matches_only_present_words(small_glossary):
-    flat, _ = small_glossary
+    flat, llm_judged = small_glossary
     # "credits" and "run" are in the text; "trash" and "install" are not.
-    terms = _extract_relevant_terms("Gain 9 credits. End the run.", flat)
-    assert "credits" in terms
-    assert "run" in terms
-    assert "trash" not in terms
-    assert "install" not in terms
+    terms = _extract_relevant_terms("Gain 9 credits. End the run.", flat, llm_judged)
+    en_terms = [t["en"] for t in terms]
+    assert "credits" in en_terms
+    assert "run" in en_terms
+    assert "trash" not in en_terms
+    assert "install" not in en_terms
 
 
 def test_extract_relevant_terms_empty_text_returns_empty(small_glossary):
-    flat, _ = small_glossary
-    assert _extract_relevant_terms("", flat) == {}
+    flat, llm_judged = small_glossary
+    assert _extract_relevant_terms("", flat, llm_judged) == []
 
 
 def test_extract_relevant_terms_word_boundary_no_partial_match(small_glossary):
     """'trash' must not match inside 'untrash' or similar compound words."""
     flat: GlossaryFlat = {"run": ("런", "official")}
     # "running" must NOT match "run" (partial match guard)
-    terms = _extract_relevant_terms("She was running fast.", flat)
-    assert "run" not in terms
+    terms = _extract_relevant_terms("She was running fast.", flat, True)
+    en_terms = [t["en"] for t in terms]
+    assert "run" not in en_terms
 
 
 def test_extract_relevant_terms_word_boundary_exact_match(small_glossary):
     flat: GlossaryFlat = {"run": ("런", "official")}
-    terms = _extract_relevant_terms("End the run.", flat)
-    assert "run" in terms
-    assert terms["run"] == "런"
+    terms = _extract_relevant_terms("End the run.", flat, True)
+    assert len(terms) == 1
+    assert terms[0]["en"] == "run"
+    assert terms[0]["ko"] == "런"
+    assert terms[0]["source"] == "official"
+    assert terms[0]["llm_judged"] is True
+
+
+def test_extract_relevant_terms_provenance_non_official_inherits_llm_judged(small_glossary):
+    """Extracted terms inherit the global llm_judged flag; official terms are always True."""
+    flat: GlossaryFlat = {
+        "run": ("런", "official"),
+        "credits": ("크레딧", "extracted"),
+    }
+    terms_judged = _extract_relevant_terms("Gain 9 credits. End the run.", flat, True)
+    terms_not_judged = _extract_relevant_terms("Gain 9 credits. End the run.", flat, False)
+
+    run_judged = next(t for t in terms_judged if t["en"] == "run")
+    credits_judged = next(t for t in terms_judged if t["en"] == "credits")
+    credits_not_judged = next(t for t in terms_not_judged if t["en"] == "credits")
+
+    assert run_judged["llm_judged"] is True          # official is always True
+    assert credits_judged["llm_judged"] is True      # extracted inherits llm_judged=True
+    assert credits_not_judged["llm_judged"] is False  # extracted inherits llm_judged=False
 
 
 # ===========================================================================
@@ -275,8 +299,11 @@ def test_build_draft_prompt_contains_safe_wrap_tags():
 
 def test_build_draft_prompt_includes_glossary_terms():
     wrapped = safe_wrap("End the run.")
-    glossary = {"run": "런", "credits": "크레딧"}
-    prompt = _build_draft_prompt(wrapped, [], glossary, llm_judged=True)
+    injected = [
+        {"en": "run", "ko": "런", "source": "official", "llm_judged": True},
+        {"en": "credits", "ko": "크레딧", "source": "extracted", "llm_judged": True},
+    ]
+    prompt = _build_draft_prompt(wrapped, [], injected, llm_judged=True)
     assert "run → 런" in prompt
     assert "credits → 크레딧" in prompt
 
@@ -284,14 +311,16 @@ def test_build_draft_prompt_includes_glossary_terms():
 def test_build_draft_prompt_flags_unvalidated_terms_when_llm_judged_false():
     """When llm_judged=False, the prompt must expose this to the model."""
     wrapped = safe_wrap("End the run.")
-    prompt = _build_draft_prompt(wrapped, [], {"run": "런"}, llm_judged=False)
-    assert "not yet LLM-validated" in prompt or "unvalidated" in prompt.lower()
+    injected = [{"en": "run", "ko": "런", "source": "extracted", "llm_judged": False}]
+    prompt = _build_draft_prompt(wrapped, [], injected, llm_judged=False)
+    assert "not yet LLM-validated" in prompt or "not yet validated" in prompt.lower()
 
 
 def test_build_draft_prompt_no_unvalidated_note_when_llm_judged_true():
     wrapped = safe_wrap("End the run.")
-    prompt = _build_draft_prompt(wrapped, [], {"run": "런"}, llm_judged=True)
-    # validated flag means no warning note
+    injected = [{"en": "run", "ko": "런", "source": "official", "llm_judged": True}]
+    prompt = _build_draft_prompt(wrapped, [], injected, llm_judged=True)
+    # validated flag means no warning note for official terms
     assert "not yet LLM-validated" not in prompt
 
 
@@ -300,9 +329,21 @@ def test_build_draft_prompt_includes_tm_hits():
     tm_hits = [
         {"en_text": "End the run.", "ko_text": "런을 종료한다.", "score": 0.05},
     ]
-    prompt = _build_draft_prompt(wrapped, tm_hits, {}, llm_judged=True)
+    prompt = _build_draft_prompt(wrapped, tm_hits, [], llm_judged=True)
     assert "End the run." in prompt
     assert "런을 종료한다." in prompt
+
+
+def test_build_draft_prompt_tm_hits_wrapped_with_safe_wrap():
+    """TM hit EN/KO texts must be wrapped with safe_wrap (AC2c)."""
+    wrapped = safe_wrap("End the run.")
+    tm_hits = [
+        {"en_text": "End the run.", "ko_text": "런을 종료한다.", "score": 0.05},
+    ]
+    prompt = _build_draft_prompt(wrapped, tm_hits, [], llm_judged=True)
+    # The TM hit texts must appear inside <card-text> delimiters
+    # (the main card text and both TM hit texts get wrapped)
+    assert prompt.count("<card-text>") >= 2  # main text + at least 1 TM hit
 
 
 # ===========================================================================
@@ -354,7 +395,7 @@ def test_generate_draft_prompt_contains_safe_wrap(small_tm_index, small_glossary
 
 
 def test_generate_draft_glossary_terms_only_for_matching_words(small_tm_index, small_glossary):
-    """Only glossary terms present in the card text appear in glossary_terms."""
+    """Only glossary terms present in the card text appear in injected_terms."""
     flat, llm_judged = small_glossary
     llm = _MockLLM("번역")
     _, _, _, terms = generate_draft(
@@ -364,30 +405,51 @@ def test_generate_draft_glossary_terms_only_for_matching_words(small_tm_index, s
         llm_judged=llm_judged,
         llm=llm,
     )
+    # terms is list[dict] with {en, ko, source, llm_judged}
+    en_terms = [t["en"] for t in terms]
     # "credits" is in source; "trash" and "install" are not
-    assert "credits" in terms
-    assert "trash" not in terms
-    assert "install" not in terms
+    assert "credits" in en_terms
+    assert "trash" not in en_terms
+    assert "install" not in en_terms
 
 
-def test_generate_draft_zero_confidence_when_no_hits():
-    """When TM index has no records matching the query, tm_confidence must be 0.0."""
+def test_generate_draft_injected_terms_have_provenance(small_tm_index, small_glossary):
+    """injected_terms dicts must have en, ko, source, llm_judged fields."""
+    flat, llm_judged = small_glossary
+    llm = _MockLLM("런을 종료한다.")
+    _, _, _, terms = generate_draft(
+        "End the run.",
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=llm_judged,
+        llm=llm,
+    )
+    assert len(terms) > 0
+    for term in terms:
+        assert "en" in term, f"missing 'en': {term}"
+        assert "ko" in term, f"missing 'ko': {term}"
+        assert "source" in term, f"missing 'source': {term}"
+        assert "llm_judged" in term, f"missing 'llm_judged': {term}"
+        assert term["source"] in ("official", "subtype_extracted", "extracted")
+        assert isinstance(term["llm_judged"], bool)
+
+
+def test_generate_draft_zero_confidence_when_k_zero():
+    """When k=0, tm_hits is empty and tm_confidence must be exactly 0.0."""
     index = HybridTMIndex(use_dense=False)
-    index.build([{"id": "x", "en_text": "zzz qqq www", "ko_text": "희귀"}])
+    index.build([{"id": "x", "en_text": "Gain 9 credits.", "ko_text": "9 크레딧을 얻는다."}])
     flat: GlossaryFlat = {}
     llm = _MockLLM("번역")
-    _, _, tm_confidence, _ = generate_draft(
-        "Something completely different.",
+    _, tm_hits, tm_confidence, _ = generate_draft(
+        "Gain 9 credits.",
         tm_index=index,
         flat_glossary=flat,
         llm_judged=True,
         llm=llm,
-        k=1,
+        k=0,
     )
-    # tm_confidence > 0 because RRF always assigns some score to the only doc;
-    # what we assert is that when we pass k=1 we get exactly 1 hit
-    # and that the return type is float (not None)
-    assert isinstance(tm_confidence, float)
+    assert tm_hits == []
+    assert tm_confidence == 0.0
 
 
 def test_generate_draft_flavor_text(small_tm_index, small_glossary):
@@ -455,9 +517,30 @@ def test_full_graph_draft_state_fields_populated(small_tm_index, small_glossary)
     assert "draft_ko" in result
     assert "tm_hits" in result
     assert "tm_confidence" in result
-    assert "glossary_terms" in result
+    assert "injected_terms" in result
     assert isinstance(result["tm_hits"], list)
     assert isinstance(result["tm_confidence"], float)
+    assert isinstance(result["injected_terms"], list)
+
+
+def test_full_graph_injected_terms_have_provenance(small_tm_index, small_glossary):
+    """injected_terms in graph state must have {en, ko, source, llm_judged} per term."""
+    flat, llm_judged = small_glossary
+    llm = _MockLLM("런을 종료한다.")
+    graph = build_translation_graph(
+        tm_index=small_tm_index,
+        flat_glossary=flat,
+        llm_judged=llm_judged,
+        llm=llm,
+    )
+    result = graph.invoke({"card_id": "icewall", "en_rule": "End the run."})
+    terms = result.get("injected_terms", [])
+    # "run" is in small_glossary as official; should appear
+    en_terms = [t["en"] for t in terms]
+    assert "run" in en_terms
+    run_term = next(t for t in terms if t["en"] == "run")
+    assert run_term["source"] == "official"
+    assert run_term["llm_judged"] is True  # official = always judged
 
 
 def test_full_graph_stub_mode_no_draft_ko():

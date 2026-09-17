@@ -110,8 +110,11 @@ cd "C:/Users/SDS/.ouroboros/worktrees/mini_pjt/orch_a6bc6099bdae"
 2단계 온라인 경로(번역 큐 · 가드레일 · MCP 4도구 · HITL) 8 AC.
 Seed는 `seed-phase2a.yaml`에 있고 브랜치에 커밋돼 있다. 선행조건(자산 구축)은 충족됐다.
 
-**주의:** Seed의 `brownfield_context`가 HEAD `7026260`을 가리킨다. 현재 HEAD는 `143f1cd`이므로
-실행 전에 갱신하거나, 워크트리 실물이 우선함을 확인할 것.
+**주의 — Seed 사본이 둘인데 내용이 다르다.** 정본은 **브랜치 커밋본**
+(`143f1cd`에서 `context_references`를 `ContextReference` 객체로 교정한 판)이다.
+로컬 main 디렉터리(`mini_pjt/.ouroboros/seed-phase2a.yaml`)에 같은 이름의 **미추적 구버전**이
+남아 있는데, `context_references`가 문자열 리스트이고 `HEAD 7026260`을 박아둔 낡은 판이다.
+**실행에 쓰지 말 것.** 워크트리 경로로 지정해서 돌린다.
 
 ### 작업 2 — 룰 용어 수동 정답셋 (번역가, 병렬 가능)
 

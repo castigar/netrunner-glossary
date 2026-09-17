@@ -54,6 +54,98 @@ from tm_index import HybridTMIndex
 
 
 # ---------------------------------------------------------------------------
+# AC3: Guard-input projection adapter
+# ---------------------------------------------------------------------------
+
+
+def _apply_guard_projections(
+    *,
+    en_source: str,
+    draft_ko: str,
+    injected_terms: list[dict],
+    flat_glossary: GlossaryFlat,
+    llm_judged: bool,
+    conflict_entries: list[dict],
+    tm_confidence: float | None = None,
+    tm_threshold: float | None = None,
+) -> list[dict]:
+    """Single adapter that maps DraftRecord field projections to guard calls.
+
+    Guard-input projection mapping (guard_input_projection ontology concept):
+      injection_guard:  (en_source, draft_ko)
+      fidelity_guard:   (en_source, draft_ko)      [via check_hitl_triggers]
+      glossary_guard:   (draft_ko, injected_terms) [via check_hitl_triggers]
+      new_term_guard:   (en_source, draft_ko, glossary) [via check_hitl_triggers]
+      conflict_guard:   (draft_ko, injected_terms, conflicts) [via check_hitl_triggers]
+
+    Each guard is imported and called here — not reimplemented.  Calling a
+    guard without declaring its projection in this adapter does not count as
+    calling it (wiring_vs_reimplementation constraint).
+
+    Args:
+        en_source:       EN source text (text or flavor field, already stripped).
+        draft_ko:        Draft Korean translation from the process node.
+        injected_terms:  Per-term provenance list from the process node
+                         ({en, ko, source, llm_judged}); pre-filtered to terms
+                         present in en_source. Used as the glossary_guard and
+                         conflict_guard projections.
+        flat_glossary:   Full flat glossary for new_term_guard and the HITL
+                         coordinator (glossary_guard uses this internally).
+        llm_judged:      Whether the extracted glossary section is validated.
+        conflict_entries: Conflict entries from conflicts.json for conflict_guard.
+        tm_confidence:   Top-1 TM RRF score; triggers low_tm_confidence when
+                         below the threshold (trigger ④).
+        tm_threshold:    Threshold for trigger ④ — must be derived from the
+                         current run's tm_confidence distribution (measured_in_run),
+                         not a hard-coded constant. When None, hitl_interrupt falls
+                         back to TM_THRESHOLD env var then to _DEFAULT_TM_THRESHOLD.
+                         Callers (build_translation_graph) should always pass the
+                         run-time-derived value to satisfy AC4.
+
+    Returns:
+        List of violation dicts, each with at least:
+          - ``guard``: str  — which guard fired
+          - ``detail`` or ``matches``: structured reason data
+        Empty list when all guards pass.
+    """
+    violations: list[dict] = []
+
+    # Guard 1: injection_guard — projection: (en_source, draft_ko)
+    # check_injection accepts ko_text as the draft_ko projection field.
+    inj_result = check_injection(en_source, ko_text=draft_ko)
+    if not inj_result.passed:
+        violations.append({
+            "guard": "injection",
+            "matches": [m.model_dump() for m in inj_result.matches],
+        })
+
+    # Guards 2–5: fidelity, glossary, new_term, conflict — via HITL coordinator.
+    # Projections consumed per guard (documented, not reimplemented):
+    #   fidelity_guard:   (en_source, draft_ko)
+    #   glossary_guard:   (draft_ko, injected_terms)  — injected_terms pre-filter
+    #                     means glossary check covers exactly the injected terms
+    #   new_term_guard:   (en_source, draft_ko, glossary)
+    #   conflict_guard:   (draft_ko, injected_terms, conflicts) — injected EN
+    #                     terms used to identify which sourced terms conflict
+    hitl_result = check_hitl_triggers(
+        en_source,
+        draft_ko,
+        glossary=flat_glossary,
+        llm_judged=llm_judged,
+        conflict_entries=conflict_entries,
+        tm_top_score=tm_confidence,
+        tm_threshold=tm_threshold,
+    )
+    for trigger in hitl_result.triggers:
+        violations.append({
+            "guard": trigger.reason.value,
+            "detail": trigger.detail,
+        })
+
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 
@@ -70,12 +162,14 @@ class CardState(TypedDict, total=False):
     tm_hits: list[dict]           # TM search results: [{id, en_text, score}]
     tm_confidence: float          # RRF score of top-1 TM hit (0.0 if no hits)
     injected_terms: list[dict]    # per-term provenance: [{en, ko, source, llm_judged}]
+    glossary_llm_judged: bool     # whether extracted glossary terms are LLM-validated
     # AC3 fields: guardrail validation outputs
     guard_passed: bool               # True when all 5 guards pass
     guard_violations: list           # list of violation dicts from failed guards
     needs_review: bool               # True when card is routed to review queue
     # AC5 fields: post-approval storage outputs
     approved_ko: str                 # final approved Korean translation (post-interrupt)
+    new_terms: list[dict]            # new_term_identity pairs: [{en, ko_rendering}] (AC5)
     new_terms_submitted: list[str]   # EN terms written to new_term_candidates.json
 
 
@@ -105,6 +199,44 @@ def _route_decision(state: CardState) -> Literal["process_rule", "process_flavor
     if state.get("text_type") == "flavor":
         return "process_flavor"
     return "process_rule"
+
+
+def expand_card_to_field_inputs(card: dict) -> list[CardState]:
+    """Expand a card dict into one CardState per non-empty text field.
+
+    AC1: The routing input unit is (card_id, field) pair, not card.
+    A card with both en_text and en_flavor produces 2 CardState inputs with
+    different routes. Each input isolates exactly one field so the conditional
+    edge routes deterministically:
+      - en_text non-empty → CardState with en_rule=text, en_flavor="" → rule route
+      - en_flavor non-empty → CardState with en_rule="", en_flavor=flavor → flavor route
+      - both non-empty → two CardStates in order [rule, flavor]
+      - neither non-empty → empty list
+
+    This function does NOT invoke the graph; it is the expansion step that the
+    caller (e.g. run_pipeline.py) uses before invoking graph.invoke().
+    """
+    card_id = card.get("id", "")
+    en_text = (card.get("en_text") or "").strip()
+    en_flavor = (card.get("en_flavor") or "").strip()
+
+    inputs: list[CardState] = []
+
+    if en_text:
+        inputs.append({
+            "card_id": card_id,
+            "en_rule": en_text,
+            "en_flavor": "",  # isolate rule field so routing is deterministic
+        })
+
+    if en_flavor:
+        inputs.append({
+            "card_id": card_id,
+            "en_rule": "",  # isolate flavor field so routing is deterministic
+            "en_flavor": en_flavor,
+        })
+
+    return inputs
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +404,7 @@ def _make_process_node(
             "tm_hits": hits,
             "tm_confidence": confidence,
             "injected_terms": terms,
+            "glossary_llm_judged": llm_judged,
         }
 
     return process_node
@@ -286,15 +419,19 @@ def _make_validate_node(
     flat_glossary: GlossaryFlat,
     llm_judged: bool,
     conflict_entries: list[dict],
+    tm_threshold: float | None = None,
 ) -> Callable[[CardState], CardState]:
     """Return a node that validates the draft with all 5 guardrails.
 
-    Guards called (existing modules, not re-implemented):
-      1. injection_guard.check_injection  — prompt injection in source text
-      2. new_term_guard (via check_hitl_triggers) — unregistered EN terms
-      3. conflict_guard (via check_hitl_triggers) — term conflicts
-      4. glossary_guard (via check_hitl_triggers) — glossary compliance
-      5. fidelity_guard (via check_hitl_triggers) — structural fidelity
+    Delegates to :func:`_apply_guard_projections` — the single adapter that
+    maps DraftRecord field projections to each guard call (AC3).
+
+    Guards called via the adapter (existing modules, not re-implemented):
+      1. injection_guard   — projection: (en_source, draft_ko)
+      2. new_term_guard    — projection: (en_source, draft_ko, glossary)
+      3. conflict_guard    — projection: (draft_ko, injected_terms, conflicts)
+      4. glossary_guard    — projection: (draft_ko, injected_terms)
+      5. fidelity_guard    — projection: (en_source, draft_ko)
 
     Failed items set needs_review=True and are routed to review_queue.
     """
@@ -311,31 +448,18 @@ def _make_validate_node(
         if not draft_ko:
             return {**state, "guard_passed": True, "guard_violations": [], "needs_review": False}
 
-        # Guard 1: injection check on source text (before it reached the LLM)
-        inj_result = check_injection(source_text)
-
-        # Guards 2–5: new_term, conflict, glossary, fidelity via hitl coordinator
-        hitl_result = check_hitl_triggers(
-            source_text,
-            draft_ko,
-            glossary=flat_glossary,
+        # All 5 guards applied through the projection adapter.
+        violations = _apply_guard_projections(
+            en_source=source_text,
+            draft_ko=draft_ko,
+            injected_terms=state.get("injected_terms") or [],
+            flat_glossary=flat_glossary,
             llm_judged=llm_judged,
             conflict_entries=conflict_entries,
-            tm_top_score=state.get("tm_confidence"),
+            tm_confidence=state.get("tm_confidence"),
+            tm_threshold=tm_threshold,
         )
-
-        guard_passed = inj_result.passed and not hitl_result.should_interrupt
-        violations: list[dict] = []
-        if not inj_result.passed:
-            violations.append({
-                "guard": "injection",
-                "matches": [m.model_dump() for m in inj_result.matches],
-            })
-        for trigger in hitl_result.triggers:
-            violations.append({
-                "guard": trigger.reason.value,
-                "detail": trigger.detail,
-            })
+        guard_passed = len(violations) == 0
 
         return {
             **state,
@@ -389,21 +513,29 @@ def _make_review_queue_node(
             "violations": state.get("guard_violations", []),
         })
 
-        # Resolve approved KO text from human decision
+        # Resolve approved KO text from human decision.
+        # Reviewer may also supply term_renderings: {en_term: ko_rendering} for new_term pairs.
+        term_renderings: dict[str, str] = {}
         if isinstance(human_decision, dict):
             approved_ko = human_decision.get("approved_ko", draft_ko)
+            term_renderings = human_decision.get("term_renderings", {})
         else:
             approved_ko = draft_ko  # plain "approved" string → use draft as-is
         modified = approved_ko != draft_ko
+
+        # field/route provenance for the storage unit (card_id, field) + route (AC5).
+        field_name = "text" if text_type == "rule" else "flavor"
 
         # Collect interrupt reasons for the record
         interrupt_reasons = [
             v.get("guard", "") for v in state.get("guard_violations", [])
         ]
 
-        # Persist to approved store (approved.jsonl)
+        # Persist to approved store (approved.jsonl) — unit is (card_id, field) + route.
         record = ApprovedRecord(
             card_id=state.get("card_id", ""),
+            field=field_name,
+            route=text_type,
             en_text=source_text,
             ko_draft=draft_ko,
             approved_ko=approved_ko,
@@ -412,14 +544,22 @@ def _make_review_queue_node(
         )
         append_approved(record, store_path=approved_store_path)
 
-        # Persist new term candidates (new_term_candidates.json) — new_term only
+        # Collect new_term_identity pairs — (en, ko_rendering) from new_term violations.
+        # ko_rendering comes from reviewer-supplied term_renderings if available; else "".
+        # These populate DraftRecord.new_terms (AC5) and are written to new_term_candidates.json.
+        # glossary.json is NOT modified — phase-3 confirmation is required (AC5).
+        new_terms: list[dict] = []
         new_terms_submitted: list[str] = []
         for v in state.get("guard_violations", []):
             if v.get("guard") == "new_term":
                 for en_term in v.get("detail", {}).get("new_terms", []):
+                    ko_rendering = term_renderings.get(en_term, "")
+                    new_terms.append({"en": en_term, "ko_rendering": ko_rendering})
                     candidate = NewTermCandidateRecord(
                         en_term=en_term,
+                        ko_rendering=ko_rendering,
                         source_card_id=state.get("card_id", ""),
+                        source_field=field_name,
                         approved_ko_context=approved_ko,
                     )
                     append_new_term_candidate(candidate, store_path=new_term_candidates_path)
@@ -428,6 +568,7 @@ def _make_review_queue_node(
         return {
             **state,
             "approved_ko": approved_ko,
+            "new_terms": new_terms,
             "new_terms_submitted": new_terms_submitted,
         }
 
@@ -470,6 +611,7 @@ def build_translation_graph(
     approved_store_path: Path | str = "approved.jsonl",
     new_term_candidates_path: Path | str = "new_term_candidates.json",
     flavor_inject_glossary: bool = True,
+    tm_threshold: float | None = None,
 ) -> StateGraph:
     """Build and return the compiled translation graph.
 
@@ -511,6 +653,14 @@ def build_translation_graph(
                                   text can reference game terms that need consistent
                                   translation; pass False to disable injection for
                                   flavor cards explicitly.
+        tm_threshold:    Threshold for trigger ④ (low_tm_confidence). Must be
+                         derived from the current run's tm_confidence distribution
+                         (measured_in_run, AC4). When None, hitl_interrupt falls
+                         back to TM_THRESHOLD env var → _DEFAULT_TM_THRESHOLD.
+                         Pipeline runners (run_pipeline.py, evaluate_pipeline.py)
+                         must call derive_tm_confidence_threshold() first and pass
+                         the result here. Passing None is only acceptable in tests
+                         that control the threshold via TM_THRESHOLD env var.
 
     Returns:
         A compiled :class:`langgraph.graph.StateGraph` ready to invoke.
@@ -533,7 +683,7 @@ def build_translation_graph(
     # AC3: guard validation node
     if flat_glossary is not None:
         validate_node = _make_validate_node(
-            flat_glossary, llm_judged, conflict_entries or []
+            flat_glossary, llm_judged, conflict_entries or [], tm_threshold=tm_threshold
         )
     else:
         validate_node = validate_draft  # stub

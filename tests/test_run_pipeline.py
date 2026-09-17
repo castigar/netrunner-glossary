@@ -140,8 +140,15 @@ def test_pipeline_output_written_to_disk(tmp_path):
     )
     assert out.exists(), "pipeline output file must be created"
     lines = out.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == 1
-    rec = json.loads(lines[0])
+    # First line is the AC4 metadata header (tm_threshold_derivation).
+    # Skip it; card records follow from line index 1 onward.
+    assert len(lines) >= 2, "output must have header + at least 1 card record"
+    header = json.loads(lines[0])
+    assert header.get("_meta") == "run_pipeline_header", (
+        f"first line must be metadata header; got: {header}"
+    )
+    # AC1: a card may have both text and flavor, producing 2 DraftRecords.
+    rec = json.loads(lines[1])
     assert "card_id" in rec
     assert "draft_ko" in rec
 

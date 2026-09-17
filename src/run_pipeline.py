@@ -42,7 +42,7 @@ if str(_HERE) not in sys.path:
 
 from glossary_guard import load_flat_glossary
 from tm_index import HybridTMIndex
-from translation_graph import build_translation_graph, CardState
+from translation_graph import build_translation_graph, expand_card_to_field_inputs, CardState
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +75,91 @@ class _StubResponse:
 
 
 # ---------------------------------------------------------------------------
+# AC4: TM confidence threshold derivation (measured_in_run)
+# ---------------------------------------------------------------------------
+
+
+def derive_tm_confidence_threshold(
+    *,
+    hold_out: list[dict],
+    tm_index: HybridTMIndex,
+    percentile: float = 20.0,
+) -> tuple[float, dict]:
+    """Derive the TM confidence threshold from the current run's corpus.
+
+    AC4 constraint: the threshold for trigger ④ (low_tm_confidence) must be
+    measured_in_run — derived from the distribution of tm_confidence scores
+    observed during the current run, NOT a hard-coded constant.
+
+    Searches TM for every hold-out EN text (NOT ko_text — reference_leakage_ban)
+    and collects the top-1 RRF score.  Returns the *percentile*-th percentile of
+    those scores as the threshold so that the bottom fraction of cards (low TM
+    similarity) fires the interrupt trigger.
+
+    Args:
+        hold_out:   Hold-out records.  Only ``en_text`` is read; ``ko_text`` is
+                    never accessed, satisfying hitl_threshold_provenance constraint.
+        tm_index:   Already-built HybridTMIndex for TM searches.
+        percentile: Lower percentile to use as threshold (default 20 → p20).
+                    Cards whose tm_confidence < p20 of the corpus distribution
+                    will fire trigger ④.
+
+    Returns:
+        (threshold, derivation_record)
+        where derivation_record contains:
+          - derivation_rule: human-readable description of the derivation
+          - percentile:      the percentile used
+          - n_cards:         number of cards whose scores contributed
+          - scores_min/max/median: distribution statistics (no ko_text used)
+          - derived_threshold: the computed threshold value
+          - provenance:      always "measured_in_run" (AC4 ontology)
+    """
+    import statistics
+
+    scores: list[float] = []
+    for card in hold_out:
+        en_text = (card.get("en_text") or "").strip()
+        if not en_text:
+            continue
+        results = tm_index.search(en_text, k=1)
+        scores.append(results[0]["score"] if results else 0.0)
+
+    if not scores:
+        threshold = 0.0
+        derivation_record: dict = {
+            "derivation_rule": f"p{percentile:.0f}(tm_confidence) from hold-out EN texts — no scores (empty index)",
+            "percentile": percentile,
+            "n_cards": 0,
+            "scores_min": None,
+            "scores_max": None,
+            "scores_median": None,
+            "derived_threshold": threshold,
+            "provenance": "measured_in_run",
+        }
+        return threshold, derivation_record
+
+    sorted_scores = sorted(scores)
+    n = len(sorted_scores)
+    idx = max(0, min(n - 1, int(percentile / 100.0 * n)))
+    threshold = sorted_scores[idx]
+
+    derivation_record = {
+        "derivation_rule": (
+            f"p{percentile:.0f}(tm_confidence scores from {n} hold-out EN texts, "
+            f"no ko_text used — reference_leakage_ban)"
+        ),
+        "percentile": percentile,
+        "n_cards": n,
+        "scores_min": sorted_scores[0],
+        "scores_max": sorted_scores[-1],
+        "scores_median": statistics.median(sorted_scores),
+        "derived_threshold": threshold,
+        "provenance": "measured_in_run",
+    }
+    return threshold, derivation_record
+
+
+# ---------------------------------------------------------------------------
 # Draft record extraction
 # ---------------------------------------------------------------------------
 
@@ -96,6 +181,7 @@ def _state_to_draft_record(state: CardState) -> dict:
         "tm_hits": slim_hits,
         "injected_terms": state.get("injected_terms", []),
         "tm_confidence": state.get("tm_confidence", 0.0),
+        "glossary_llm_judged": state.get("glossary_llm_judged", False),
     }
 
 
@@ -111,6 +197,7 @@ def run_pipeline(
     n_cards: int,
     output_path: Path,
     llm_model: str | None = None,
+    tm_threshold_percentile: float = 20.0,
 ) -> list[dict]:
     """Wire the full pipeline and run it on *n_cards* from hold_out.json.
 
@@ -149,6 +236,21 @@ def run_pipeline(
         llm = _StubLLM()
         print("[run_pipeline] using stub LLM (no model credentials needed)")
 
+    # ---------- AC4: Derive TM confidence threshold from current run ----------
+    # Reference leakage ban: only hold-out EN texts are used — ko_text is never read.
+    # The threshold is measured_in_run (hitl_threshold_provenance == "measured_in_run").
+    all_hold_out: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
+    tm_threshold, tm_threshold_derivation = derive_tm_confidence_threshold(
+        hold_out=all_hold_out,
+        tm_index=tm_index,
+        percentile=tm_threshold_percentile,
+    )
+    print(
+        f"[run_pipeline] AC4 TM threshold derived: {tm_threshold:.6f}"
+        f" (p{tm_threshold_percentile:.0f} of {tm_threshold_derivation['n_cards']} cards)"
+        f" provenance={tm_threshold_derivation['provenance']}"
+    )
+
     # ---------- Build translation graph ----------
     graph = build_translation_graph(
         tm_index=tm_index,
@@ -156,46 +258,56 @@ def run_pipeline(
         llm_judged=llm_judged,
         llm=llm,
         conflict_entries=conflict_entries,
+        tm_threshold=tm_threshold,
     )
     print("[run_pipeline] translation graph compiled")
 
     # ---------- Load hold-out cards ----------
-    hold_out: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
-    cards = hold_out[:n_cards]
+    # all_hold_out already loaded for threshold derivation above.
+    cards = all_hold_out[:n_cards]
     print(f"[run_pipeline] running {len(cards)} card(s) from hold_out.json")
 
     # ---------- Run pipeline ----------
+    # AC1: iteration unit is (card_id, field) pair, not card.
+    # A card with both en_text and en_flavor produces 2 DraftRecords.
     draft_records: list[dict] = []
     for card in cards:
-        initial: CardState = {
-            "card_id": card["id"],
-            "en_rule": card.get("en_text", ""),
-            "en_flavor": card.get("en_flavor", ""),
-        }
-        state = graph.invoke(initial)
+        field_inputs = expand_card_to_field_inputs(card)
+        for initial in field_inputs:
+            state = graph.invoke(initial)
 
-        # Interrupted cards (guard failures) still produce a draft — we record it.
-        # reference_leakage_ban: never substitute hold-out ko_text as draft_ko.
-        if isinstance(state, dict) and "__interrupt__" in state:
-            # Retrieve current graph state snapshot for the draft fields
-            record = _state_to_draft_record(state)
-            record["interrupted"] = True
-        else:
-            record = _state_to_draft_record(state)
-            record["interrupted"] = False
+            # Interrupted cards (guard failures) still produce a draft — we record it.
+            # reference_leakage_ban: never substitute hold-out ko_text as draft_ko.
+            if isinstance(state, dict) and "__interrupt__" in state:
+                record = _state_to_draft_record(state)
+                record["interrupted"] = True
+            else:
+                record = _state_to_draft_record(state)
+                record["interrupted"] = False
 
-        draft_records.append(record)
-        route = record["route"]
-        tm_conf = record["tm_confidence"]
-        n_terms = len(record["injected_terms"])
-        print(f"  [{card['id']}] route={route} tm_confidence={tm_conf:.4f} terms={n_terms}")
+            draft_records.append(record)
+            route = record["route"]
+            tm_conf = record["tm_confidence"]
+            n_terms = len(record["injected_terms"])
+            print(f"  [{card['id']}:{route}] tm_confidence={tm_conf:.4f} terms={n_terms}")
 
     # ---------- Save output ----------
+    # AC4: Write a metadata header line first with the threshold derivation record.
+    # This records the measured_in_run threshold provenance in the output artifact.
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "_meta": "run_pipeline_header",
+        "tm_threshold_derivation": tm_threshold_derivation,
+    }
     with output_path.open("w", encoding="utf-8") as f:
+        f.write(json.dumps(metadata, ensure_ascii=False) + "\n")
         for rec in draft_records:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     print(f"[run_pipeline] wrote {len(draft_records)} records → {output_path}")
+    print(
+        f"[run_pipeline] AC4 threshold derivation rule: "
+        f"{tm_threshold_derivation['derivation_rule']}"
+    )
 
     return draft_records
 

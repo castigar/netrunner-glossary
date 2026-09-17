@@ -144,13 +144,17 @@ def _load_pipeline_output(
     hold_out: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
     hold_out_ids = [c.get("id", "") for c in hold_out]
 
-    # Parse pipeline output
+    # Parse pipeline output — skip AC4 metadata header lines (have "_meta" key).
     records: list[dict] = []
     with pipeline_output_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line:
-                records.append(json.loads(line))
+            if not line:
+                continue
+            obj = json.loads(line)
+            if "_meta" in obj:
+                continue  # skip header (AC4 threshold derivation record)
+            records.append(obj)
 
     # Build an id→record index for alignment
     record_by_id: dict[str, dict] = {r.get("card_id", ""): r for r in records}

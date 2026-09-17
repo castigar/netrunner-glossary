@@ -230,10 +230,19 @@ def run_pipeline(
     output_path: Path,
     llm_model: str | None = None,
     tm_threshold_percentile: float = 20.0,
+    eval_autoresume: bool = False,
 ) -> list[dict]:
     """Wire the full pipeline and run it on *n_cards* from hold_out.json.
 
     Returns the list of draft records saved to *output_path*.
+
+    Args:
+        eval_autoresume: AC8 eval mode. When True, the graph runs with a
+            MemorySaver checkpointer so interrupt() actually fires, and a
+            deterministic auto-responder supplies Command(resume="approved")
+            for every interrupted card without consulting hold-out ko_text.
+            An eval_autoresume_header is written to the output with HITL stats.
+            Predictions are NOT human-approved (is_human_approved=False always).
     """
     glossary_path = assets_dir / "glossary.json"
     conflicts_path = assets_dir / "conflicts.json"
@@ -284,6 +293,15 @@ def run_pipeline(
     )
 
     # ---------- Build translation graph ----------
+    # AC8: eval_autoresume mode uses MemorySaver so interrupt() can be resumed.
+    # Operational mode (eval_autoresume=False) uses no checkpointer — graph
+    # fires interrupt() but cannot resume in the same call.
+    checkpointer = None
+    if eval_autoresume:
+        from langgraph.checkpoint.memory import MemorySaver
+        checkpointer = MemorySaver()
+        print("[run_pipeline] AC8 eval_autoresume mode: MemorySaver checkpointer enabled")
+
     graph = build_translation_graph(
         tm_index=tm_index,
         flat_glossary=flat_glossary,
@@ -291,6 +309,7 @@ def run_pipeline(
         llm=llm,
         conflict_entries=conflict_entries,
         tm_threshold=tm_threshold,
+        checkpointer=checkpointer,
     )
     print("[run_pipeline] translation graph compiled")
 
@@ -303,29 +322,71 @@ def run_pipeline(
     # AC1: iteration unit is (card_id, field) pair, not card.
     # A card with both en_text and en_flavor produces 2 DraftRecords.
     draft_records: list[dict] = []
+    # AC8: HITL stats counters (only meaningful in eval_autoresume mode).
+    hitl_trigger_count = 0
+    hitl_auto_approved_count = 0
+    hitl_auto_held_count = 0
+
     for card in cards:
         field_inputs = expand_card_to_field_inputs(card)
-        for initial in field_inputs:
-            state = graph.invoke(initial)
+        for field_idx, initial in enumerate(field_inputs):
+            if eval_autoresume:
+                # AC8 eval_autoresume mode:
+                # 1. Invoke with a per-(card, field) thread_id so the checkpointer
+                #    tracks each field independently.
+                # 2. If interrupt() fires, fire the deterministic auto-responder
+                #    (Command(resume="approved")) without consulting ko_text.
+                # 3. Record auto_approved and eval_autoresume flags in the output.
+                from langgraph.types import Command
 
-            # Interrupted cards (guard failures) still produce a draft — we record it.
-            # reference_leakage_ban: never substitute hold-out ko_text as draft_ko.
-            if isinstance(state, dict) and "__interrupt__" in state:
-                record = _state_to_draft_record(state)
-                record["interrupted"] = True
+                field_label = "text" if (initial.get("en_rule") or "").strip() else "flavor"
+                thread_id = f"{card.get('id', '')}:{field_label}:{field_idx}"
+                config = {"configurable": {"thread_id": thread_id}}
+
+                state = graph.invoke(initial, config=config)
+
+                if isinstance(state, dict) and "__interrupt__" in state:
+                    # Interrupt fired: auto-responder approves as-is (deterministic,
+                    # no ko_text consulted — eval_mode_hitl_policy constraint).
+                    hitl_trigger_count += 1
+                    state = graph.invoke(Command(resume="approved"), config=config)
+                    record = _state_to_draft_record(state)
+                    record["interrupted"] = True
+                    record["eval_autoresume"] = True
+                    record["auto_approved"] = True
+                    hitl_auto_approved_count += 1
+                else:
+                    record = _state_to_draft_record(state)
+                    record["interrupted"] = False
+                    record["eval_autoresume"] = True
+                    record["auto_approved"] = False
             else:
-                record = _state_to_draft_record(state)
-                record["interrupted"] = False
+                # Operational mode: interrupt fires and graph pauses — no auto-resume.
+                # reference_leakage_ban: never substitute hold-out ko_text as draft_ko.
+                state = graph.invoke(initial)
+
+                if isinstance(state, dict) and "__interrupt__" in state:
+                    record = _state_to_draft_record(state)
+                    record["interrupted"] = True
+                else:
+                    record = _state_to_draft_record(state)
+                    record["interrupted"] = False
 
             draft_records.append(record)
             route = record["route"]
             tm_conf = record["tm_confidence"]
             n_terms = len(record["injected_terms"])
-            print(f"  [{card['id']}:{route}] tm_confidence={tm_conf:.4f} terms={n_terms}")
+            interrupted_flag = record.get("interrupted", False)
+            auto_flag = f" auto_approved={record['auto_approved']}" if eval_autoresume else ""
+            print(
+                f"  [{card['id']}:{route}] tm_confidence={tm_conf:.4f}"
+                f" terms={n_terms} interrupted={interrupted_flag}{auto_flag}"
+            )
 
     # ---------- Save output ----------
     # AC4: Write a metadata header line first with the threshold derivation record.
     # This records the measured_in_run threshold provenance in the output artifact.
+    # AC8: In eval_autoresume mode, also write an eval_autoresume_header with HITL stats.
     output_path.parent.mkdir(parents=True, exist_ok=True)
     metadata = {
         "_meta": "run_pipeline_header",
@@ -333,6 +394,19 @@ def run_pipeline(
     }
     with output_path.open("w", encoding="utf-8") as f:
         f.write(json.dumps(metadata, ensure_ascii=False) + "\n")
+        if eval_autoresume:
+            # AC8: eval_autoresume_header consumed by evaluate_pipeline._load_pipeline_output.
+            # is_human_approved is always False — the auto-responder is not a human.
+            eval_header = {
+                "_meta": "eval_autoresume_header",
+                "hitl_stats": {
+                    "trigger_count": hitl_trigger_count,
+                    "auto_approved_count": hitl_auto_approved_count,
+                    "auto_held_count": hitl_auto_held_count,
+                    "is_human_approved": False,
+                },
+            }
+            f.write(json.dumps(eval_header, ensure_ascii=False) + "\n")
         for rec in draft_records:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     print(f"[run_pipeline] wrote {len(draft_records)} records → {output_path}")
@@ -340,6 +414,14 @@ def run_pipeline(
         f"[run_pipeline] AC4 threshold derivation rule: "
         f"{tm_threshold_derivation['derivation_rule']}"
     )
+    if eval_autoresume:
+        print(
+            f"[run_pipeline] AC8 eval_autoresume stats: "
+            f"trigger_count={hitl_trigger_count} "
+            f"auto_approved={hitl_auto_approved_count} "
+            f"auto_held={hitl_auto_held_count} "
+            f"is_human_approved=False"
+        )
 
     return draft_records
 
@@ -353,6 +435,15 @@ def main() -> None:
     parser.add_argument("--cards", type=int, default=3, help="Number of hold-out cards to process (default: 3)")
     parser.add_argument("--output", default="pipeline_output.jsonl", help="Output file path")
     parser.add_argument("--llm-model", default=None, help="Bedrock model ID (omit for stub LLM)")
+    parser.add_argument(
+        "--eval-autoresume",
+        action="store_true",
+        help=(
+            "AC8 eval mode: fire interrupt() and auto-resume with a deterministic "
+            "auto-responder (never consults ko_text). Writes eval_autoresume_header "
+            "to output with HITL stats. is_human_approved is always False."
+        ),
+    )
     args = parser.parse_args()
 
     records = run_pipeline(
@@ -361,6 +452,7 @@ def main() -> None:
         n_cards=args.cards,
         output_path=Path(args.output),
         llm_model=args.llm_model,
+        eval_autoresume=args.eval_autoresume,
     )
     print(f"\n[run_pipeline] done — {len(records)} draft records saved")
 

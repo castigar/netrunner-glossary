@@ -349,7 +349,11 @@ AC9 문언은 코드에 없고 이벤트 스토어에만 있다 — `ouroboros.d
 
 ### 작업 5 — phase3 (Issue 동기화 · Pages 검수 뷰)
 
-Seed 미작성. 분할 기준은 §6.
+**Seed는 이미 있다 — `main`의 `.ouroboros/seed-phase3.yaml`(`55d694a`, AC 7개).**
+이 문서가 "미작성"이라고 적어 온 것은 틀렸다(2026-09-17 후속 세션 정정).
+실행만 남았다. 다만 `brownfield_context.context_references[0].path`가
+`orch_a6bc6099bdae/orch_3b1f1bf54116`(HEAD `40d8dc5`)를 가리키고 있어
+**Ralph 브랜치보다 한참 뒤처져 있다.** 돌리기 전에 최신 워크트리로 고친다.
 
 ## 5. 함정 모음 (직접 밟은 것들)
 
@@ -460,9 +464,13 @@ uvx --python ">=3.12" --from "ouroboros-ai[tui]" ouroboros tui monitor --db-path
 | phase2a | 번역 검토 큐 · 가드레일 · MCP 4도구 | 8 | 실행 완료, 평가 4/8 |
 | phase2b | 하드 게이트 채점 · 관찰 지표 | 5 | 실행 완료, 평가 2/5 |
 | phase2c | 온라인 파이프라인 본체 | 6→9→**8** | 실행 완료, Ralph 3세대. AC9 제거 결정(§2.5 ⑥) |
-| phase3 | Issue 동기화 · Pages 검수 뷰 · 패턴 매핑 | 7 | **미작성** |
+| phase3 | Issue 동기화 · Pages 검수 뷰 · 패턴 매핑 | 7 | **작성 완료**(`55d694a`), 미실행. context_references가 낡음 |
 
-phase2b·phase2c Seed는 `main`의 `.ouroboros/`에 있다.
+`main`의 `.ouroboros/`에 있는 Seed: phase1 · phase2b · phase2c · phase3 · `seed.yaml`.
+**phase2a Seed만 `main`에 없고 Ralph 브랜치에 있다**(`0dfda60` → `143f1cd`에서
+`context_references`를 객체로 교정). `main` 작업 디렉터리에 같은 이름의 미추적 파일이
+하나 굴러다니는데 그 **교정 전 옛 판본**이다 — 아무것도 읽지 않으므로 그냥 둔다.
+Seed를 찾을 때 그것을 집지 않도록 주의한다.
 
 ## 7. 아직 안 정한 것
 

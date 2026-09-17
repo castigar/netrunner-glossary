@@ -62,6 +62,13 @@ def small_tm_index() -> HybridTMIndex:
 # ---------------------------------------------------------------------------
 
 
+#: Smallest hold-out prefix that contains a blocking new_term interrupt, so the
+#: auto-responder's hold branch is actually exercised end to end ('trope' is at
+#: index 14).  Kept as a named constant rather than a bare literal so the reason
+#: for the number travels with it.
+HOLD_BEARING_CARD_COUNT = 15
+
+
 def _parse_jsonl_output(path: Path) -> tuple[dict, dict | None, list[dict]]:
     """Return (run_header, eval_autoresume_header|None, card_records)."""
     lines = [l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
@@ -603,7 +610,7 @@ def test_auto_held_records_have_empty_prediction_not_reference_text(tmp_path):
     run_pipeline(
         data_dir=Path("data"),
         assets_dir=Path("assets"),
-        n_cards=8,
+        n_cards=HOLD_BEARING_CARD_COUNT,
         output_path=out,
         llm_model=None,
         eval_autoresume=True,
@@ -612,7 +619,10 @@ def test_auto_held_records_have_empty_prediction_not_reference_text(tmp_path):
     )
     _, _, records = _parse_jsonl_output(out)
     held = [r for r in records if r.get("auto_held") is True]
-    assert held, "expected at least one auto-held field in the first 8 hold-out cards"
+    assert held, (
+            f"expected at least one auto-held field in the first "
+            f"{HOLD_BEARING_CARD_COUNT} hold-out cards"
+        )
     for rec in held:
         assert rec["draft_ko"] == "", f"held record {rec['card_id']} kept a draft"
         assert rec.get("empty_cause") == "approval_incomplete"
@@ -663,20 +673,36 @@ def test_synthesis_reports_approval_incomplete_for_held_fields():
     field_card_synthesis previously inferred the cause from `interrupted` alone,
     which files every auto-held field under guard_rejected_in_review_queue.
     """
-    from field_card_synthesis import synthesize_card_predictions
+    from field_card_synthesis import synthesize_field_to_card
 
     hold_out = json.loads((Path("data") / "hold_out.json").read_text(encoding="utf-8"))
     card = hold_out[0]
-    field_name = "text" if (card.get("en_text") or "").strip() else "flavor"
-    records = [{
-        "card_id": card["id"],
-        "field": field_name,
-        "route": "rule" if field_name == "text" else "flavor",
-        "draft_ko": "",
-        "interrupted": True,
-        "empty_cause": "approval_incomplete",
-        "auto_held": True,
-    }]
-    result = synthesize_card_predictions(records, [card])
-    assert result.empty_by_cause["approval_incomplete"] == 1
-    assert result.empty_by_cause["guard_rejected_in_review_queue"] == 0
+    expected = [f for f, key in (("text", "en_text"), ("flavor", "en_flavor"))
+                if (card.get(key) or "").strip()]
+    assert expected, "hold_out[0] must have at least one translatable field"
+
+    # Every expected field gets a record so no field goes missing; only the
+    # first one is held, so the counts below isolate the held field's cause.
+    records = []
+    for i, field_name in enumerate(expected):
+        rec = {
+            "card_id": card["id"],
+            "field": field_name,
+            "route": "rule" if field_name == "text" else "flavor",
+            "draft_ko": "",
+            "interrupted": True,
+        }
+        if i == 0:
+            rec["empty_cause"] = "approval_incomplete"
+            rec["auto_held"] = True
+        records.append(rec)
+
+    result = synthesize_field_to_card(records, [card])
+    assert result.empty_by_cause["approval_incomplete"] == 1, (
+        "the held field must be filed under approval_incomplete, not inferred "
+        f"from interrupted=True; got {result.empty_by_cause}"
+    )
+    # The remaining empty fields carry no recorded cause, so they still fall
+    # back to the interrupted-based inference — proving the record's own cause
+    # is what redirected the held one.
+    assert result.empty_by_cause["guard_rejected_in_review_queue"] == len(expected) - 1

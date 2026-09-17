@@ -1,6 +1,6 @@
 # 인계 문서 — Netrunner 번역 보조 에이전트
 
-**작성 2026-09-16 · 갱신 2026-09-17.** 새 세션이 이 문서만 읽고 이어받을 수 있도록 쓴다.
+**작성 2026-09-16 · 갱신 2026-09-17(후속 세션).** 새 세션이 이 문서만 읽고 이어받을 수 있도록 쓴다.
 사양의 단일 진실 원천은 [`SERVICE.md`](../SERVICE.md)이고, 이 문서는
 **지금 어디까지 됐고 다음에 뭘 해야 하는지**만 다룬다.
 
@@ -9,9 +9,12 @@
 ## 0. 30초 요약
 
 - 기획 완료. 1·2단계 구현 완료. **3단계(확정 절차)만 남았다.**
-- **코드가 한 브랜치로 모였다.** `ooo/ralph-6ec830bda576f952b7b2375d3c3868` @ `5ffeb2c`,
-  **테스트 848개 통과.** 파이프라인·게이트·룰 용어 채점기가 전부 여기 있고,
-  파이프라인이 실제로 돌아 `pipeline_output.jsonl`·`approved.jsonl`을 만든다.
+- **코드가 한 브랜치로 모였다.** `ooo/ralph-6ec830bda576f952b7b2375d3c3868` @ `1230fad`,
+  **테스트 850개 통과.** 파이프라인·게이트·룰 용어 채점기가 전부 여기 있다.
+- **그러나 파이프라인이 실제 번역을 낸 적은 2026-09-17 후속 세션이 처음이다.**
+  그 전까지 모든 실행이 `_StubLLM`으로 돌았고, 스텁은 TM 상위 1건의 KO를 그대로
+  돌려준다. `pipeline_output.jsonl` 165건이 TM 원문과 **바이트 단위로 동일**하다.
+  `approved.jsonl`은 **존재한 적이 없다** — HITL 통과율이 0%다. §2.5를 먼저 읽는다.
 - 다음 할 일은 §4 작업 1(**Ralph Gen 4**). 사용자가 새 세션에서 돌리기로 했다.
 - **origin에 `main`과 최신 브랜치가 올라가 있다.** 나머지 `ooo/*` 5개는 로컬 전용이나
   내용이 최신 브랜치에 들어 있어 유실 위험은 낮다.
@@ -41,8 +44,8 @@ export CORPUS_ROOT="C:/Users/SDS/Desktop/netrunner-corpus/netrunner-cards-json"
 
 | 브랜치 | HEAD | 테스트 | origin | 내용 |
 |---|---|---|---|---|
-| **`ooo/ralph-6ec8…`** | **`5ffeb2c`** | **848 통과** | ○ | **여기서 작업한다.** 1·2단계 전부 + Ralph 3세대 + 게이트 통합 + 채점기 |
-| `main` | `4aa829c` | — | ○ | 기획 문서·Seed·골든 셋·이 문서 |
+| **`ooo/ralph-6ec8…`** | **`1230fad`** | **850 통과** | ○ | **여기서 작업한다.** 1·2단계 전부 + Ralph 3세대 + 게이트 통합 + 채점기 + 프롬프트 수정 |
+| `main` | `269adee` | — | ○ | 기획 문서·Seed·골든 셋·이 문서 |
 | `feat/rule-gold-eval` | `4dfe72a` | — | ✕ | 채점기 원본 — **`5ffeb2c`에 통합 완료, 역할 끝남** |
 | `ooo/orch_fa2a47fe46cf` | `3ad61ca` | 623 | ✕ | 게이트 수정 — **통합 완료, 역할 끝남** |
 | `ooo/orch_a3466c696fe8` | `71cdbda` | 694 | ✕ | phase2c 실행 원본 — 최신 브랜치 이력에 포함됨 |
@@ -86,7 +89,9 @@ Ralph 자율 산출은 `481916f`~`bb83664` 6개이고, phase2c 원본 대비 **2
 - AC6 문언에서 하드코딩된 "hold-out 100장"을 "파일에서 유도한다"로 고쳤다
 - Seed에 없던 **AC7(필드→카드 합성)** 을 추가했다. 라우팅은 필드 단위인데 게이트는
   카드 단위라 그 사이를 잇는 단계가 없었다 — Seed를 쓴 사람이 놓친 빈틈이다
-- **AC9(verification manifest)** 도 추가했으나 내용 미확인
+- **AC8(eval_autoresume)·AC9(verification manifest)** 도 추가했다. 즉 Ralph가 스스로
+  늘린 AC는 2개가 아니라 **3개(7·8·9)** 이고, Gen 3는 AC 9개를 돌렸다(`ac_index` 0~8,
+  전부 completed). 문언은 이벤트 스토어에만 남아 있다 — §2.5
 - 온톨로지가 0 → 10 → **17필드**로 자랐다. `gate_scoring_subject`,
   `prediction_fallback_policy`, `baseline_provenance`, `ac_freeze_precondition` 등
 
@@ -112,8 +117,9 @@ Ralph 자율 산출은 `481916f`~`bb83664` 6개이고, phase2c 원본 대비 **2
 - 32항목 중 **16개가 이미 공식 용어집에 있다.** 룰 추출 경로는 이들을 `excluded_ids`로
   의도적으로 뺀다. 채점기가 성적표를 **두 장** 내는 이유다 — 룰 추출 경로(추출기가
   실제로 뽑은 것)와 납품 용어집 전체(공식+부제+룰 합본)
-- **도달 불가 5개** — `AP`·`killer`(DF 1), `AI`(DF 4), `identity`·`link`(DF 6, 상한 밖).
-  일부러 남겼다
+- **도달 불가는 5개가 아니라 1개다(2026-09-17 후속 세션 실측 정정).** 룰 경로에서
+  분모 밖으로 빠지는 것은 `identity`(`below_rank_cut`) 하나뿐이다. `AP`·`killer`·`AI`·
+  `link`는 그 전에 `official_excluded` 16개에 걸러지고, 납품 뷰에서는 전부 맞는다
 - **`R&D`는 도달 불가가 아니다.** 토크나이저가 `\w+`로 잘라 `r d`로 만드는 것은 맞지만
   그 형태 그대로 후보에 오르고(85장), 채점기가 정답셋의 EN도 같은 토크나이저에
   통과시키므로 정상 채점된다. 표기가 손상됐다는 사실만 따로 표시한다.
@@ -122,6 +128,123 @@ Ralph 자율 산출은 `481916f`~`bb83664` 6개이고, phase2c 원본 대비 **2
   희귀 변형을 골랐고, `HQ`에 `본부 (HQ)` 병기 표기가 역어로 들어왔다
 - 채점기는 양쪽 KO를 같은 형태소 정규화에 통과시킨다. `호스트된`/`호스트`,
   `런을 종료한다`/`런 종료`처럼 활용형이 달라도 맞는 것으로 센다
+
+## 2.5 2026-09-17 후속 세션 — 실측으로 드러난 것
+
+이 절이 이 문서에서 가장 중요하다. **테스트 850개가 전부 통과하는데도 파이프라인은
+쓸 만한 초벌을 낸 적이 없었다.**
+
+### ① 번역이 실행된 적이 없었다
+
+`run_pipeline.py:53`의 `_StubLLM`은 프롬프트에서 TM 상위 1건의 KO를 정규식으로 꺼내
+그대로 돌려준다. `--llm-model`을 주지 않으면 이것이 기본값이다. 지금까지 모든 실행이
+스텁이었다.
+
+검증: `pipeline_output.jsonl`의 165개 필드 레코드 전부가 TM 상위 1건의 `ko_text`와
+**바이트 단위로 동일**하다(165/165).
+
+그래서 phase2c 평가에 찍힌 아래 수치는 **TM 복사본을 채점한 값**이고 의미가 없다.
+
+```
+게이트 1 용어 준수율     53.3%  (기준 >= 95%)
+게이트 2 기호 보존율     46.0%  (기준 100%)
+게이트 3 편집거리 중앙값 0.4067 (기준 <= 0.2847)
+```
+
+**§3 결정 ③(게이트 3 임계 = TM 베이스라인 × 0.7)은 잘못되지 않았다.** 예측이
+베이스라인과 같아서 정의상 못 넘은 것이지 임계가 틀린 게 아니다. 실제 모델로 돌리면
+초벌이 TM과 전부 달라진다(17/17). 임계를 손대기 전에 실제 모델로 재측정한다.
+
+실행 방법 — 자격증명은 `sds-ax-practice/.env`에 있고 모델은 아래를 쓴다:
+
+```bash
+cd <ralph 워크트리>
+set -a && . "C:/Users/SDS/Desktop/sds-ax-practice/.env" && set +a
+export CORPUS_ROOT="C:/Users/SDS/Desktop/netrunner-corpus/netrunner-cards-json"
+export PYTHONPATH=src
+python src/run_pipeline.py --cards 10 --output pipeline_real10.jsonl \
+  --llm-model "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+```
+
+`run_pipeline.py`의 docstring 예시(`us.anthropic...`)는 가용 목록에 없다.
+`availableModelsOnBedrock.md`의 `global.anthropic.claude-haiku-4-5-20251001-v1:0`를 쓴다.
+
+### ② 출력 계약 결함 — 고쳤다
+
+실제 모델 첫 실행에서 **17건 중 16건이 역어에 `<card-text>` 태그를 달고 나왔고**,
+2건은 한국어가 아니라 영어 논평이었다(`"the card text ... appears to be incomplete"`).
+
+원인은 `_build_draft_prompt`다. TM 히트의 EN·KO를 각각 `safe_wrap`으로 감싸 넣어
+모델이 태그 블록을 여러 개 보는데, 프롬프트가 `## Korean translation`으로만 끝나고
+**출력 형식 지시가 없었다.** 모델이 본 형식을 그대로 흉내 냈다.
+
+`translation_graph.py`의 지시 블록에 두 줄(순수 텍스트 출력·논평 금지)을 추가해
+고쳤다. 재측정 결과 **태그 누출 16 → 0, 비한국어 2 → 0.** 회귀 테스트 2개를
+`tests/test_ac2_draft_generation.py`에 넣었다(850 통과).
+
+**이 결함은 스텁으로는 절대 보이지 않는다.** 스텁이 코퍼스의 깨끗한 KO를 돌려주기
+때문이다. 앞으로 초벌 품질 판단은 반드시 실제 모델 실행으로 한다.
+
+**증거는 Ralph 브랜치에 커밋돼 있다.** Bedrock을 다시 부르지 않고 확인할 수 있다:
+
+| 파일 | 내용 |
+|---|---|
+| `pipeline_output.jsonl` | 스텁 실행 165건 — 전부 TM 상위 1건과 동일 |
+| `pipeline_real10_before_prompt_fix.jsonl` | 실제 모델 17건 — 16건에 `<card-text>` 누출 |
+| `pipeline_real10_after_prompt_fix.jsonl` | 수정 후 17건 — 누출 0 |
+
+스텁 동일성 재확인은 `tm_hits[0]['id']`로 코퍼스의 `ko_text`를 찾아 `draft_ko`와
+문자열 비교하면 된다(165/165 일치).
+
+### ③ HITL 통과율이 0%다 — 미해결
+
+수정 후에도 **17/17이 interrupt에 걸린다.** 트리거 분포(17건 중):
+
+| 트리거 | 건수 |
+|---|---|
+| `new_term` | **15** |
+| `rule_violation` | 9 |
+| `term_conflict` | 7 |
+| `low_tm_confidence` | 6 |
+
+`new_term_guard`가 용어집 279개에 없는 영단어를 전부 신규 용어로 올린다. 가장 자주
+잡힌 것이 **`strong`(5회) — `<strong>` 태그**이고, 나머지도 `trashed`·`played`·
+`scored`·`fifteen`·`fame`·`thing`·`saw` 같은 평범한 단어다. 건당 중앙값 4개.
+
+**그래서 모든 카드가 반드시 걸리고 자동 승인이 구조적으로 불가능하다.**
+`approved.jsonl`이 한 번도 생기지 않은 이유이고, AC5(승인 적재)에 실행 증거가
+없는 이유다. 신규 용어 판정을 어디서 끊을지는 §7에 미결로 올렸다.
+
+### ④ AC8·AC9 산출물이 유실됐다
+
+Gen 3는 AC 9개를 돌렸는데 커밋은 AC2·AC4·AC6·AC7만 남았다. 이벤트 스토어에 따르면
+AC9 담당이 만든 `docs/ac_verification_manifest.md`,
+`tests/test_ac9_verification_manifest.py`(42개), AC8의
+`tests/test_ac8_eval_autoresume.py`(18개)는 **git 이력에도 디스크에도 없다.**
+
+AC6 담당의 자기 보고는 `901 passed`였고 실측 브랜치는 848이었다. 차이 53이 유실분과
+맞아떨어진다. §5 "체크포인트 커밋은 원자적이지 않다"의 재발인데 이번엔 AC 두 개가
+통째로 날아갔다.
+
+**AC8은 절반만 남았다.** `evaluate_pipeline.py`는 `eval_autoresume_header`를 읽을 줄
+아는데 그것을 만드는 `run_pipeline` 쪽이 없다. 소비자만 있고 생산자가 없다.
+
+### ⑤ AC3 문언과 구현이 어긋난다
+
+AC3은 "검토 큐 레코드는 어느 가드가 왜 실패했는지를 보존한다"고 요구하는데,
+`_state_to_draft_record`가 남기는 것은 `interrupted: true` 뿐이다. 어느 트리거가
+발화했는지 레코드에 없다. 위 ③의 분포는 `check_hitl_triggers`를 손으로 다시 돌려
+얻은 것이다.
+
+### ⑥ Ralph가 늘린 AC의 성격 판정 (§4 작업 3의 답)
+
+| AC | 내용 | 판정 |
+|---|---|---|
+| AC7 | 필드→카드 합성 | **범위 안.** AC6의 3단 집계에 빠져 있던 연결고리 |
+| AC8 | `eval_autoresume` | **범위 안.** AC4(interrupt로 정지)와 AC6(hold-out 무인 실행)이 서로 모순인데 AC8이 그것을 해소한다 |
+| AC9 | 검증 명령 ↔ AC 대응표, 세대 간 PASS 승계 조건 | **범위 밖.** 제품에 아무것도 더하지 않는 프로세스 AC다. ouroboros 하네스 쪽 관심사 |
+
+사용자 결정: **AC9은 Seed에서 빼고 AC 8개로 고정한다. AC8은 복구한다.**
 
 ## 3. 확정된 사양 결정 (재논의 불필요)
 
@@ -133,6 +256,18 @@ Ralph 자율 산출은 `481916f`~`bb83664` 6개이고, phase2c 원본 대비 **2
 
 ## 4. 다음에 할 일
 
+### 작업 0 — Gen 4 선결 조건 ★ 먼저 한다
+
+1. ~~프롬프트 수정을 커밋한다.~~ ✔ `1230fad`. 워크트리는 클린하다.
+   **다만 브랜치를 워크트리가 점유한 상태는 그대로다** — 시작 전에
+   `git -C <워크트리> checkout --detach`로 풀어 준다(§4 작업 1의 인용 블록).
+2. **Seed에서 AC9을 뺀다.** AC 8개로 고정한다(§2.5 ⑥).
+3. **AC8 생산자 측을 복구 대상으로 Seed에 명시한다.** 소비자만 남아 있다.
+4. **신규 용어 판정 경계를 정한다.** 안 정하면 HITL 100%가 그대로라 Gen 4가
+   AC5·AC8을 실행으로 증명할 수 없다(§2.5 ③, §7-6).
+5. **Seed에 "초벌은 실제 모델로 측정한다"를 못 박는다.** 안 그러면 Gen 4도 스텁으로
+   돌고 같은 무의미한 수치가 나온다(§2.5 ①).
+
 ### 작업 1 — Ralph 한 세대 더 ★ 최우선
 
 사용자가 **새 세션에서 돌리기로 했다.** 2026-09-17 세션에서 한 번 걸었다가 취소했다.
@@ -141,12 +276,21 @@ Ralph 자율 산출은 `481916f`~`bb83664` 6개이고, phase2c 원본 대비 **2
 ```
 start_ralph(
   lineage_id = "ralph-6ec830bda576f952b7b2375d3c3868",
-  project_dir = "C:\Users\SDS\.ouroboros\worktrees\orch_fa2a47fe46cf\orch_a3466c696fe8",
+  project_dir = "C:\Users\SDS\.ouroboros\worktrees\orch_a3466c696fe8\ralph-6ec830bda576f952b7b2375d3c3868",
   per_iteration_timeout_seconds = 7200,   # 상한값. 기본 1800은 짧다
   max_generations = 1,                    # 한 세대만 → Gen 4
   max_total_seconds = 7800
 )
 ```
+
+> **2026-09-17 정정.** 이 문서가 원래 적어 둔 `project_dir`
+> (`...\orch_fa2a47fe46cf\orch_a3466c696fe8`)는 `71cdbda` — phase2c 원본이고
+> **Ralph 3세대 작업이 없는 상태**다. 그대로 돌리면 6커밋을 버리고 다시 시작한다.
+> 위 경로가 `1230fad`가 붙은 실제 워크트리다. `git worktree list`로 매번 확인한다.
+>
+> 그리고 이 브랜치는 **지금 그 워크트리가 점유 중**이라 §5의
+> `Task branch already checked out in another worktree`에 그대로 걸린다.
+> 시작 전에 `git checkout --detach`로 풀어 준다.
 
 **세대 상한 두 곳을 모두 풀어야 한다.**
 
@@ -162,10 +306,27 @@ Gen 2가 작업 중 잘렸다. Gen 3는 **80분** 걸렸으므로 최대값 7200
 
 **시작 전 §5의 워크트리 위생을 확인한다.**
 
-### 작업 2 — 룰 용어 채점 실행
+### 작업 2 — 룰 용어 채점 실행 ✔ 2026-09-17 완료
 
-정답셋과 채점기가 최신 브랜치에 있고 테스트도 통과하지만 **아직 한 번도 돌리지 않았다.**
-룰 경로 용어는 여전히 채점된 적이 없는 상태다.
+**첫 실측치. Gen 4 이후 재채점해 개선/퇴행을 잰다.**
+
+| 성적표 | EN 재현율 | KO 정확도 |
+|---|---|---|
+| 룰 추출 경로 | 73.3% (11/15) | 90.9% (10/11) |
+| 납품 용어집 전체 | 87.1% (27/31) | 96.3% (26/27) |
+
+못 맞힌 4개는 원인이 서로 다르다 — **2개는 추출 실패가 아니라 표제어 단위 불일치다.**
+
+- `credit` — 용어집에 `credits`(복수)와 `credit pool`이 있다. **역어 `크레딧`은 이미
+  있고** 단수 표제어만 없다. 굴절 정규화 문제
+- `gain` — `gain credits`(바이그램)만 뽑혔고 단일어가 없다. n-gram 단위 문제
+- `R&D` — 토크나이저가 `r d`로 만들고 그 형태조차 최종 용어집에 없다
+- `heap` — 진짜 부재
+
+KO 오답은 `HQ` 하나뿐이다(`본부 (HQ)` ← 정답 `본부`). §2가 적어 둔 `Archives` 결함은
+`기록 보관소`로 정상 채점돼 해소된 것으로 보인다.
+
+재실행 방법:
 
 ```bash
 export CORPUS_ROOT="C:/Users/SDS/Desktop/netrunner-corpus/netrunner-cards-json"
@@ -175,11 +336,11 @@ export CORPUS_ROOT="C:/Users/SDS/Desktop/netrunner-corpus/netrunner-cards-json"
 §2의 "채점 전에 알아야 할 것"을 반영해 결과를 읽는다. 특히 성적표 두 장을 구분해
 보고, 도달 불가 5개를 "못 맞힌 것"과 섞지 않는다.
 
-### 작업 3 — AC9 내용 확인
+### 작업 3 — AC9 내용 확인 ✔ 2026-09-17 완료
 
-Ralph가 추가한 AC9(verification manifest)의 내용을 확인해 **페이즈 범위 안인지
-판정한다.** AC7은 빈틈 메우기로 판단했으나 AC9은 미확인이다. 확장이 무제한이면
-페이즈 경계가 무너진다.
+§2.5 ⑥ 참조. **AC9은 범위 밖으로 판정했고 Seed에서 뺀다.** AC7·AC8은 범위 안이다.
+AC9 문언은 코드에 없고 이벤트 스토어에만 있다 — `ouroboros.db`의 `events.payload`에서
+`verification_manifest`로 검색하면 나온다.
 
 ### 작업 4 — 브랜치 정리
 
@@ -298,7 +459,7 @@ uvx --python ">=3.12" --from "ouroboros-ai[tui]" ouroboros tui monitor --db-path
 | phase1 | 자산 구축 + TM 베이스라인 | 8 | 실행 완료 |
 | phase2a | 번역 검토 큐 · 가드레일 · MCP 4도구 | 8 | 실행 완료, 평가 4/8 |
 | phase2b | 하드 게이트 채점 · 관찰 지표 | 5 | 실행 완료, 평가 2/5 |
-| phase2c | 온라인 파이프라인 본체 | 6→9 | 실행 완료, Ralph 3세대 진행 |
+| phase2c | 온라인 파이프라인 본체 | 6→9→**8** | 실행 완료, Ralph 3세대. AC9 제거 결정(§2.5 ⑥) |
 | phase3 | Issue 동기화 · Pages 검수 뷰 · 패턴 매핑 | 7 | **미작성** |
 
 phase2b·phase2c Seed는 `main`의 `.ouroboros/`에 있다.
@@ -310,8 +471,16 @@ phase2b·phase2c Seed는 `main`의 `.ouroboros/`에 있다.
 3. 가드레일 통과율을 하드 게이트로 승격할지 관찰 지표로 둘지
 4. **브랜치 정리 방침** — `ooo/*` 7개가 쌓였다. `ooo/ralph-6ec8…`로 수렴시키고
    나머지를 정리할 시점
-5. **AC 확장을 어디서 멈출지** — Ralph가 AC7·AC9를 스스로 추가했다.
-   온톨로지의 `ac_freeze_precondition`이 그 기준을 정의하려는 것으로 보이나 미확인
+5. **AC 확장을 어디서 멈출지** — Ralph가 AC7·AC8·AC9를 스스로 추가했다.
+   AC9은 범위 밖으로 판정해 뺐지만(§2.5 ⑥) 일반 기준은 아직 없다.
+   온톨로지의 `ac_freeze_precondition`이 그것을 정의하려는 것으로 보이나 미확인
+6. **신규 용어 판정을 어디서 끊을지** ★ Gen 4 선결 — 지금은 용어집 279개에 없는
+   영단어를 전부 신규 용어로 올려 HITL이 100%다(§2.5 ③). 최소한 `<strong>` 같은
+   마크업은 빼야 하고, 그 다음 `trashed`·`played` 같은 일반 동사를 어떻게 거를지가
+   남는다. 빈도 하한·품사·고유명사 여부 중 무엇을 쓸지 정해야 한다
+7. **초벌 품질을 무엇으로 볼지** — 실제 모델 초벌은 읽을 만하지만 TM 상위 1건이
+   엉뚱한 카드인 경우가 있다(`net_celebrity`의 TM 히트는 `paywall_implementation`).
+   TM 검색 품질 자체를 지표로 둘지 미정
 
 ### 알려진 사소한 결함 (미수정)
 

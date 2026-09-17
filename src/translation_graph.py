@@ -293,6 +293,11 @@ def _build_draft_prompt(
         "Preserve all game symbols exactly: [credit] [click] [subroutine] [trash]"
         " [mu] [link] [recurring-credit] [interrupt] and faction icons.",
         "Do not add effects or conditions that are not in the source text.",
+        "Output only the Korean translation itself as plain text — no <card-text>"
+        " tags, no code fences, no surrounding markup. The reference blocks below"
+        " are wrapped in tags because they are data; your answer is not.",
+        "Translate whatever text is given, however short. Never comment on the"
+        " task, ask for clarification, or explain — output the translation only.",
     ]
 
     if injected_terms:

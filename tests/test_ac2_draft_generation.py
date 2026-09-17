@@ -50,6 +50,37 @@ def test_build_draft_prompt_wraps_card_text_with_xml_delimiters():
     assert _CLOSE_TAG in prompt, f"Expected {_CLOSE_TAG!r} in prompt"
 
 
+def test_build_draft_prompt_states_plain_text_output_contract():
+    """Prompt must tell the model its answer is not wrapped in <card-text> tags.
+
+    Without this, the model mirrors the tagged reference blocks and emits its
+    translation inside <card-text>…</card-text> — measured at 16/17 records on a
+    real Bedrock run, which fails every downstream guard.
+    """
+    wrapped = safe_wrap("End the run.")
+    prompt = _build_draft_prompt(
+        wrapped_text=wrapped,
+        tm_hits=[],
+        injected_terms=[],
+        llm_judged=True,
+    )
+    assert "Output only the Korean translation itself as plain text" in prompt
+    assert "your answer is not" in prompt
+
+
+def test_build_draft_prompt_forbids_meta_commentary():
+    """Short flavor lines drew English commentary instead of a translation."""
+    wrapped = safe_wrap("Fifteen seconds of fame.")
+    prompt = _build_draft_prompt(
+        wrapped_text=wrapped,
+        tm_hits=[],
+        injected_terms=[],
+        llm_judged=True,
+    )
+    assert "however short" in prompt
+    assert "output the translation only" in prompt
+
+
 def test_build_draft_prompt_wraps_tm_hit_en_text():
     """TM hit EN text must be safe-wrapped in prompt (AC2c — corpus source not trusted)."""
     wrapped_card = safe_wrap("End the run.")

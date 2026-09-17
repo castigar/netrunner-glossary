@@ -173,11 +173,32 @@ def _state_to_draft_record(state: CardState) -> dict:
     AC3: When the card was routed to the review queue (guard_violations non-empty),
     the violation details are preserved in the output record so the caller can see
     which guard failed and why — not just that the card was interrupted.
+
+    AC5: new_terms field carries new_term_identity pairs ({en, ko_rendering}).
+    For interrupted cards before approval, EN terms come from guard_violations
+    with ko_rendering="" (unknown until human approval).  For post-approval states
+    (after Command(resume=...)), new_terms comes from state["new_terms"] which
+    carries the actual ko_rendering supplied by the reviewer.
     """
     slim_hits = [
         {"id": h["id"], "en_text": h["en_text"], "score": h["score"]}
         for h in state.get("tm_hits", [])
     ]
+
+    # AC5: new_terms = new_term_identity pairs in DraftRecord.
+    # Post-approval state (review_queue node set new_terms after interrupt returned).
+    new_terms_in_state = state.get("new_terms")
+    if new_terms_in_state is not None:
+        new_terms: list[dict] = list(new_terms_in_state)
+    else:
+        # Pre-approval (interrupted) or clean pass: extract EN terms from guard_violations.
+        # ko_rendering is unknown before approval — stored as "".
+        new_terms = []
+        for v in state.get("guard_violations") or []:
+            if v.get("guard") == "new_term":
+                for en_term in v.get("detail", {}).get("new_terms", []):
+                    new_terms.append({"en": en_term, "ko_rendering": ""})
+
     record: dict = {
         "card_id": state.get("card_id", ""),
         "route": state.get("text_type", "rule"),
@@ -186,6 +207,7 @@ def _state_to_draft_record(state: CardState) -> dict:
         "injected_terms": state.get("injected_terms", []),
         "tm_confidence": state.get("tm_confidence", 0.0),
         "glossary_llm_judged": state.get("glossary_llm_judged", False),
+        "new_terms": new_terms,  # AC5: new_term_identity pairs (en, ko_rendering)
     }
     # AC3: preserve guard violation details (which guard, why) in interrupted records.
     # guard_violations is set by validate_draft and carries {guard, detail|matches} per entry.

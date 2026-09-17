@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "scope": "rule_text",
+  "labeler": "",
+  "labeled_at": "",
+  "corpus": "netrunner-cards-json v2 · clean corpus 980장 (2012-2016)",
+  "entries": [
+    {
+      "en": "trash",
+      "ko": ["폐기"],
+      "source": "example",
+      "note": "형식 예시다. 라벨링을 시작할 때 이 항목 3개를 지우고 쓴다."
+    },
+    {
+      "en": "end the run",
+      "ko": ["런을 종료한다", "런 종료"],
+      "source": "example",
+      "note": "역어가 둘 이상 정당하면 모두 적는다. 채점은 하나라도 맞으면 정답으로 센다."
+    },
+    {
+      "en": "R&D",
+      "ko": ["연구개발부"],
+      "source": "example",
+      "note": "추출기가 못 잡을 것을 알면서도 적는다. 그게 측정하려는 것이다. (§3 참조)"
+    }
+  ]
+}

@@ -13,6 +13,7 @@ dependencies = [
     "langchain-aws>=0.2",
     "kiwipiepy>=0.18",
     "fastmcp>=2.0",
+    "langgraph>=1.2.11",
 ]
 
 [project.optional-dependencies]

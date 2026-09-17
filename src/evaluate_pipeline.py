@@ -75,6 +75,14 @@ class EvaluationReport:
         field_synthesis:        AC7 field-to-card synthesis report. Populated when
                                 loading from pipeline_output.jsonl (not for TM-only
                                 or flat-prediction modes).
+        hitl_mode:              AC8 HITL execution mode. "eval_autoresume" when the
+                                pipeline ran with deterministic auto-resume; None when
+                                not applicable (TM-only or flat-prediction mode).
+        hitl_trigger_count:     AC8 number of interrupt() calls that fired.
+        hitl_auto_approved_count: AC8 number of cards auto-approved by the auto-responder.
+        hitl_auto_held_count:   AC8 number of cards auto-held (not auto-approved).
+        is_human_approved:      AC8 whether the predictions went through human approval.
+                                Always False in eval_autoresume mode.
     """
 
     verdict: GateVerdict
@@ -85,6 +93,12 @@ class EvaluationReport:
     tm_baseline_median: Optional[float] = None
     gate3_derived_threshold: Optional[float] = None
     field_synthesis: Optional[FieldSynthesisReport] = None
+    # AC8: HITL mode disclosure fields
+    hitl_mode: Optional[str] = None
+    hitl_trigger_count: int = 0
+    hitl_auto_approved_count: int = 0
+    hitl_auto_held_count: int = 0
+    is_human_approved: bool = False
 
 
 def _tm_predictions(
@@ -134,32 +148,38 @@ def _compute_tm_baseline_median(
 
 def _load_pipeline_output(
     pipeline_output_path: Path, hold_out_path: Path
-) -> tuple[list[str], int, int, float, FieldSynthesisReport]:
+) -> tuple[list[str], int, int, float, FieldSynthesisReport, Optional[dict]]:
     """Load draft_ko predictions from a pipeline_output.jsonl file.
 
     AC7: Uses field-to-card synthesis to handle (card_id, field) pairs correctly.
     A card with both text and flavor fields produces two records; any empty field
     makes the card's gate-scoring prediction "" (card violated).
 
+    AC8: When the header has _meta="eval_autoresume_header", extracts hitl_stats
+    and returns them as the 6th element (None otherwise).
+
     Returns:
-        (predictions, pending_count, empty_count, pending_ratio, field_synthesis)
+        (predictions, pending_count, empty_count, pending_ratio, field_synthesis, hitl_stats)
 
         predictions:      Card-level gate predictions aligned with hold_out.json order.
                           Derived from synthesize_field_to_card (AC7 synthesis rule).
-        pending_count:    Cards where at least one field record has interrupted=True.
+        pending_count:    Cards where at least one field record has interrupted=True
+                          AND auto_approved is False (or missing). eval_autoresume
+                          records with auto_approved=True are NOT counted as pending.
         empty_count:      Total number of empty field predictions (across all fields).
         pending_ratio:    pending_count / total hold-out cards.
         field_synthesis:  AC7 FieldSynthesisReport (card-level compliance breakdown).
+        hitl_stats:       AC8 HITL stats from eval_autoresume header, or None.
 
     pipeline_output.jsonl schema (one JSON object per line):
         {card_id, route, draft_ko, tm_hits, injected_terms, tm_confidence, interrupted}
+        For eval_autoresume records: also {eval_autoresume, auto_approved}
     """
     hold_out: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
 
-    # Parse ALL field records — skip AC4 metadata header lines (have "_meta" key).
-    # Unlike the previous implementation, we keep ALL records (not just last per card_id)
-    # because a card can have both text and flavor field records.
+    # Parse ALL field records — collect header for AC8 HITL stats.
     field_records: list[dict] = []
+    hitl_stats: Optional[dict] = None
     with pipeline_output_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -167,17 +187,22 @@ def _load_pipeline_output(
                 continue
             obj = json.loads(line)
             if "_meta" in obj:
-                continue  # skip header (AC4 threshold derivation record)
+                # AC8: extract hitl_stats from eval_autoresume header.
+                if obj.get("_meta") == "eval_autoresume_header":
+                    hitl_stats = obj.get("hitl_stats")
+                continue
             field_records.append(obj)
 
     # AC7: synthesize field-level records into card-level judgments.
     synthesis = synthesize_field_to_card(field_records, hold_out)
 
-    # Count pending cards (at least one field record interrupted=True).
+    # Count pending cards: interrupted=True AND NOT auto_approved.
+    # In eval_autoresume mode, auto_approved=True means the graph completed
+    # (auto-resumed) — these are NOT truly pending (not waiting for human review).
     interrupted_cards: set[str] = {
         r.get("card_id", "")
         for r in field_records
-        if r.get("interrupted", False)
+        if r.get("interrupted", False) and not r.get("auto_approved", False)
     }
     pending_count = sum(
         1 for r in synthesis.card_results
@@ -190,7 +215,7 @@ def _load_pipeline_output(
     total = synthesis.total_count
     pending_ratio = pending_count / total if total > 0 else 0.0
 
-    return synthesis.card_predictions, pending_count, empty_count, pending_ratio, synthesis
+    return synthesis.card_predictions, pending_count, empty_count, pending_ratio, synthesis, hitl_stats
 
 
 def run_evaluation(
@@ -207,6 +232,11 @@ def run_evaluation(
     empty_prediction_count: int = 0,
     tm_baseline_median: Optional[float] = None,
     field_synthesis: Optional[FieldSynthesisReport] = None,
+    hitl_mode: Optional[str] = None,
+    hitl_trigger_count: int = 0,
+    hitl_auto_approved_count: int = 0,
+    hitl_auto_held_count: int = 0,
+    is_human_approved: bool = False,
 ) -> EvaluationReport:
     """Evaluate pipeline predictions through hard gates and observation metrics.
 
@@ -282,6 +312,11 @@ def run_evaluation(
         tm_baseline_median=tm_baseline_median,
         gate3_derived_threshold=gate3_derived_threshold,
         field_synthesis=field_synthesis,
+        hitl_mode=hitl_mode,
+        hitl_trigger_count=hitl_trigger_count,
+        hitl_auto_approved_count=hitl_auto_approved_count,
+        hitl_auto_held_count=hitl_auto_held_count,
+        is_human_approved=is_human_approved,
     )
 
 
@@ -295,7 +330,34 @@ def print_evaluation_report(report: EvaluationReport) -> None:
     - Interrupt-pending count/ratio — AC6(e)
     - Empty prediction count — AC6(c)
     - Gate 2 structural-fail notice when threshold > measured rate — AC6(d)
+    - AC8 HITL mode disclosure: is_human_approved, trigger/approved/held counts
     """
+    # AC8: HITL mode disclosure — must appear before gate scores.
+    if report.hitl_mode is not None:
+        print("=== HITL 실행 모드 (AC8) ===")
+        print(f"  모드: {report.hitl_mode}")
+        print(
+            "  ※ 이 실행의 예측은 사람 승인을 거치지 않은 산출물입니다"
+            f" (is_human_approved={report.is_human_approved})"
+        )
+        print(f"  트리거 발화 건수: {report.hitl_trigger_count}")
+        print(f"  자동 승인 건수:  {report.hitl_auto_approved_count}")
+        print(f"  자동 보류 건수:  {report.hitl_auto_held_count}")
+        print()
+
+    # AC6: Named prediction series.
+    # Two series coexist in the same run; gates score pipeline_predictions.
+    print("=== 예측 계열 (AC6) ===")
+    print("  게이트 채점 대상: pipeline_predictions (전체 파이프라인 출력 또는 제공된 예측)")
+    if report.tm_baseline_median is not None:
+        print(
+            f"  tm_only_baseline: 게이트 3 임계 유도용 "
+            f"(실측값 {report.tm_baseline_median:.4f})"
+        )
+    else:
+        print("  tm_only_baseline: 미측정 (게이트 3 임계 유도 없음)")
+    print()
+
     print(format_verdict(report.verdict))
 
     # (f) Gate1Result.llm_judged
@@ -414,6 +476,21 @@ def main() -> None:
         action="store_true",
         help="Skip observation metrics (Bedrock calls). Useful when AWS creds are absent.",
     )
+    parser.add_argument(
+        "--run-pipeline",
+        action="store_true",
+        help=(
+            "Run the full pipeline on ALL hold-out cards before evaluation. "
+            "Card count is derived from data/hold_out.json (hold_out_size_source AC). "
+            "Saves output to pipeline_output.jsonl then evaluates it. "
+            "Mutually exclusive with --pipeline-output and --predictions-file."
+        ),
+    )
+    parser.add_argument(
+        "--llm-model",
+        default=None,
+        help="Bedrock model ID for --run-pipeline mode (omit to use stub LLM).",
+    )
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
@@ -427,23 +504,72 @@ def main() -> None:
     empty_prediction_count = 0
     tm_baseline_median: Optional[float] = None
     field_synthesis: Optional[FieldSynthesisReport] = None
+    # AC8 HITL mode fields
+    hitl_mode: Optional[str] = None
+    hitl_trigger_count = 0
+    hitl_auto_approved_count = 0
+    hitl_auto_held_count = 0
+    is_human_approved = False
 
-    if args.pipeline_output and args.predictions_file:
-        parser.error("--pipeline-output and --predictions-file are mutually exclusive.")
+    # Mutual-exclusion checks
+    n_modes = sum([bool(args.pipeline_output), bool(args.predictions_file), args.run_pipeline])
+    if n_modes > 1:
+        parser.error(
+            "--pipeline-output, --predictions-file, and --run-pipeline are mutually exclusive."
+        )
 
-    if args.pipeline_output:
-        pipeline_output_path = Path(args.pipeline_output)
-        predictions, pending_count, empty_prediction_count, pending_ratio, field_synthesis = (
+    if args.run_pipeline:
+        # AC6: Run the FULL pipeline on ALL hold-out cards.
+        # Card count derived from file (hold_out_size_source: file, not constant).
+        from run_pipeline import run_pipeline as _run_pipeline
+
+        all_hold_out = json.loads(hold_out_path.read_text(encoding="utf-8"))
+        n_cards = len(all_hold_out)  # derived from file, not hardcoded (hold_out_size_source AC)
+        pipeline_output_path = Path("pipeline_output.jsonl")
+        print(
+            f"[INFO] Running pipeline on {n_cards} hold-out cards "
+            f"(hold_out_size_source: {hold_out_path})..."
+        )
+        _run_pipeline(
+            data_dir=data_dir,
+            assets_dir=assets_dir,
+            n_cards=n_cards,
+            output_path=pipeline_output_path,
+            llm_model=args.llm_model,
+        )
+        predictions, pending_count, empty_prediction_count, pending_ratio, field_synthesis, _ = (
             _load_pipeline_output(pipeline_output_path, hold_out_path)
         )
         print(
-            f"[INFO] Pipeline output loaded: {len(predictions)} cards, "
-            f"pending={pending_count}, empty={empty_prediction_count}"
+            f"[INFO] pipeline_predictions: {len(predictions)} cards "
+            f"(pending={pending_count}, empty={empty_prediction_count})"
         )
-        # Still measure TM baseline for Gate 3 threshold derivation.
-        print("[INFO] Measuring TM-only baseline for Gate 3 threshold derivation...")
+        print("[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...")
         tm_baseline_median, _ = _compute_tm_baseline_median(hold_out_path, train_path)
-        print(f"[INFO] TM-only baseline median: {tm_baseline_median:.4f}")
+        print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
+
+    elif args.pipeline_output:
+        pipeline_output_path = Path(args.pipeline_output)
+        predictions, pending_count, empty_prediction_count, pending_ratio, field_synthesis, _hitl = (
+            _load_pipeline_output(pipeline_output_path, hold_out_path)
+        )
+        # AC8: propagate HITL stats from eval_autoresume header if present.
+        if _hitl is not None:
+            hitl_mode = "eval_autoresume"
+            hitl_trigger_count = _hitl.get("trigger_count", 0)
+            hitl_auto_approved_count = _hitl.get("auto_approved_count", 0)
+            hitl_auto_held_count = _hitl.get("auto_held_count", 0)
+            is_human_approved = bool(_hitl.get("is_human_approved", False))
+        print(
+            f"[INFO] pipeline_predictions: {len(predictions)} cards loaded "
+            f"(pending={pending_count}, empty={empty_prediction_count})"
+        )
+        if hitl_mode is not None:
+            print(f"[INFO] HITL mode: {hitl_mode} (is_human_approved={is_human_approved})")
+        # Measure tm_only_baseline for Gate 3 threshold derivation.
+        print("[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...")
+        tm_baseline_median, _ = _compute_tm_baseline_median(hold_out_path, train_path)
+        print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
 
     elif args.predictions_file:
         raw = Path(args.predictions_file).read_text(encoding="utf-8")
@@ -452,19 +578,20 @@ def main() -> None:
         else:
             predictions = [line.rstrip("\n") for line in raw.splitlines()]
         empty_prediction_count = sum(1 for p in predictions if not p)
-        # Measure TM baseline for Gate 3 threshold derivation.
-        print("[INFO] Measuring TM-only baseline for Gate 3 threshold derivation...")
+        # Measure tm_only_baseline for Gate 3 threshold derivation.
+        print("[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...")
         tm_baseline_median, _ = _compute_tm_baseline_median(hold_out_path, train_path)
-        print(f"[INFO] TM-only baseline median: {tm_baseline_median:.4f}")
+        print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
 
     else:
-        print("[INFO] No predictions source given — using TM-only baseline predictions.")
-        print("[INFO] Measuring TM-only baseline...")
+        # Default: both pipeline_predictions and tm_only_baseline are the TM-only series.
+        print("[INFO] No predictions source given — scoring tm_only_baseline as pipeline_predictions.")
+        print("[INFO] Measuring tm_only_baseline...")
         predictions, empty_prediction_count = _tm_predictions(hold_out_path, train_path)
         # Gate 3 baseline = same predictions (TM-only IS the baseline)
         g3_result = gate3_edit_distance.score_hold_out(hold_out_path, predictions)
         tm_baseline_median = g3_result.median_distance
-        print(f"[INFO] TM-only baseline median: {tm_baseline_median:.4f}")
+        print(f"[INFO] tm_only_baseline median edit distance: {tm_baseline_median:.4f}")
         if empty_prediction_count > 0:
             print(
                 f"[INFO] {empty_prediction_count} cards had no TM hit "
@@ -481,6 +608,11 @@ def main() -> None:
         empty_prediction_count=empty_prediction_count,
         tm_baseline_median=tm_baseline_median,
         field_synthesis=field_synthesis,
+        hitl_mode=hitl_mode,
+        hitl_trigger_count=hitl_trigger_count,
+        hitl_auto_approved_count=hitl_auto_approved_count,
+        hitl_auto_held_count=hitl_auto_held_count,
+        is_human_approved=is_human_approved,
     )
     print_evaluation_report(report)
 

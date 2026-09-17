@@ -59,6 +59,241 @@ from obs_llm_judge import (
 )
 from tm_index import HybridTMIndex
 
+# TM Echo Gate policy constant — same status as gate1's 0.95 and gate2's 1.0.
+# Not derived from a measurement, so pinning it is not "baking a measured number
+# into the criteria": it is a policy floor with a 5x margin over the 1%
+# coincidence rate observed on hold-out.  The other half of the threshold
+# relation (the coincidence rate) stays measured_in_run.
+ECHO_FLOOR = 0.05
+
+# run_model_provenance: gate verdicts are only meaningful for a real model run.
+REAL_RUN_MODE = "real"
+
+
+def _norm_ws(text: str) -> str:
+    """Normalize whitespace: strip, collapse internal spaces."""
+    return " ".join(text.split())
+
+
+@dataclass
+class EchoGateResult:
+    """TM Echo Gate result — regression canary for prompt/retrieval quality.
+
+    Checks whether draft_ko coincidentally copies tm_hits[0].ko_text too often.
+    A high echo rate indicates the LLM merely parrots TM results.
+
+    Passed when actual_echo_rate <= threshold.
+    Threshold = max(ECHO_FLOOR, coincidence_rate_measured_in_run).
+
+    This gate is a canary, not adversarial defense — a single character change
+    evades it. Stub run protection is handled by the llm_model=None block.
+    """
+
+    passed: bool
+    actual_echo_rate: float
+    coincidence_rate: float  # TM top-1 hits ref_ko: calibrates threshold
+    threshold: float         # max(ECHO_FLOOR, coincidence_rate)
+    denominator: int         # tm_hits non-empty AND draft_ko non-empty
+    echo_count: int
+    coincidence_count: int
+    echo_floor: float = ECHO_FLOOR
+
+
+def score_echo_gate(
+    field_records: list[dict],
+    hold_out_cards: list[dict],
+) -> EchoGateResult:
+    """Compute the TM Echo Gate over field-level pipeline records.
+
+    Denominator: records where tm_hits is non-empty AND draft_ko is non-empty.
+    Interrupted records are included (they still have draft_ko from generation).
+
+    Coincidence rate: fraction where tm_hits[0].ko_text matches hold-out reference.
+    This calibrates the threshold — it is NOT prediction leakage; the reference is
+    only used to measure how often TM retrieval happens to return the right answer.
+    """
+    ref_by_card: dict[str, dict[str, str]] = {}
+    for card in hold_out_cards:
+        cid = card.get("id", "")
+        ref_by_card[cid] = {
+            "text": _norm_ws(card.get("ko_text") or ""),
+            "flavor": _norm_ws(card.get("ko_flavor") or ""),
+        }
+
+    echo_count = 0
+    coincidence_count = 0
+    denominator = 0
+
+    for rec in field_records:
+        tm_hits = rec.get("tm_hits") or []
+        draft_ko = _norm_ws(rec.get("draft_ko") or "")
+        if not tm_hits or not draft_ko:
+            continue
+        denominator += 1
+
+        top1_ko = _norm_ws(tm_hits[0].get("ko_text", ""))
+        if draft_ko == top1_ko:
+            echo_count += 1
+
+        cid = rec.get("card_id", "")
+        field_name = rec.get("field") or (
+            "text" if rec.get("route", "rule") == "rule" else "flavor"
+        )
+        ref_ko = ref_by_card.get(cid, {}).get(field_name, "")
+        if ref_ko and top1_ko == ref_ko:
+            coincidence_count += 1
+
+    actual_echo_rate = echo_count / denominator if denominator > 0 else 0.0
+    coincidence_rate = coincidence_count / denominator if denominator > 0 else 0.0
+    threshold = max(ECHO_FLOOR, coincidence_rate)
+
+    return EchoGateResult(
+        passed=actual_echo_rate <= threshold,
+        actual_echo_rate=actual_echo_rate,
+        coincidence_rate=coincidence_rate,
+        threshold=threshold,
+        denominator=denominator,
+        echo_count=echo_count,
+        coincidence_count=coincidence_count,
+    )
+
+
+@dataclass
+class RunProvenance:
+    """run_model_provenance: which models produced the scored artifact.
+
+    Read from the ``run_pipeline_header`` line of pipeline_output.jsonl.  A run
+    is "real" only when the header says so; gate verdicts are withheld otherwise
+    (a stub run echoes the top TM hit, so its gate numbers describe the TM index,
+    not a translator).
+    """
+
+    run_mode: str = "unknown"
+    primary_model_id: Optional[str] = None
+    models_used: list[str] = field(default_factory=list)
+    model_record_counts: dict[str, int] = field(default_factory=dict)
+    model_attempts_log: list[dict] = field(default_factory=list)
+    model_failure_count: int = 0
+
+    @property
+    def mixed_run(self) -> bool:
+        """True when more than one model produced records in the same run."""
+        return len(self.models_used) > 1
+
+
+@dataclass
+class PerModelGateNumbers:
+    """Gate numbers restricted to the cards a single model produced.
+
+    A mixed run's single average represents neither model, so the report breaks
+    the gates down per model.  These are filtered aggregations over the gate
+    scorers' own ``card_results`` — the scoring logic is not re-implemented.
+    """
+
+    model_id: str
+    card_count: int
+    field_record_count: int
+    gate1_rate: Optional[float]
+    gate2_rate: Optional[float]
+    gate3_median: Optional[float]
+    echo_rate: Optional[float]
+
+
+def _read_run_header(pipeline_output_path: Path) -> RunProvenance:
+    """Read the run_pipeline_header line from a pipeline output file."""
+    with Path(pipeline_output_path).open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            if obj.get("_meta") == "run_pipeline_header":
+                return RunProvenance(
+                    run_mode=obj.get("run_mode", "unknown"),
+                    primary_model_id=obj.get("primary_model_id"),
+                    models_used=list(obj.get("models_used") or []),
+                    model_record_counts=dict(obj.get("model_record_counts") or {}),
+                    model_attempts_log=list(obj.get("model_attempts_log") or []),
+                    model_failure_count=int(obj.get("model_failure_count") or 0),
+                )
+            if "_meta" not in obj:
+                break
+    return RunProvenance()
+
+
+def _cards_by_model(field_records: list[dict]) -> dict[str, set[str]]:
+    """Map model_id -> set of card_ids that model produced records for."""
+    out: dict[str, set[str]] = {}
+    for rec in field_records:
+        mid = rec.get("model_id")
+        if not mid:
+            continue
+        out.setdefault(mid, set()).add(rec.get("card_id", ""))
+    return out
+
+
+def _median(values: list[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def per_model_gate_numbers(
+    verdict: GateVerdict,
+    field_records: list[dict],
+) -> list[PerModelGateNumbers]:
+    """Break the already-scored gate results down by the model that produced them.
+
+    Filters each gate scorer's ``card_results`` by model attribution.  Returns an
+    empty list when no record carries a model_id (stub runs).
+    """
+    by_model = _cards_by_model(field_records)
+    if not by_model:
+        return []
+
+    out: list[PerModelGateNumbers] = []
+    for model_id in sorted(by_model):
+        cards = by_model[model_id]
+        recs = [r for r in field_records if r.get("model_id") == model_id]
+
+        g1_checks = sum(c.term_checks for c in verdict.gate1.card_results if c.card_id in cards)
+        g1_viol = sum(c.violations for c in verdict.gate1.card_results if c.card_id in cards)
+        gate1_rate = (g1_checks - g1_viol) / g1_checks if g1_checks else None
+
+        g2_cards = [c for c in verdict.gate2.card_results if c.card_id in cards]
+        gate2_rate = (
+            sum(1 for c in g2_cards if c.passed) / len(g2_cards) if g2_cards else None
+        )
+
+        g3_dists = [c.distance for c in verdict.gate3.card_results if c.card_id in cards]
+        gate3_median = _median(g3_dists)
+
+        echo_denom = 0
+        echo_hits = 0
+        for r in recs:
+            hits = r.get("tm_hits") or []
+            draft = _norm_ws(r.get("draft_ko") or "")
+            if not hits or not draft:
+                continue
+            echo_denom += 1
+            if draft == _norm_ws(hits[0].get("ko_text", "")):
+                echo_hits += 1
+
+        out.append(PerModelGateNumbers(
+            model_id=model_id,
+            card_count=len(cards),
+            field_record_count=len(recs),
+            gate1_rate=gate1_rate,
+            gate2_rate=gate2_rate,
+            gate3_median=gate3_median,
+            echo_rate=(echo_hits / echo_denom) if echo_denom else None,
+        ))
+    return out
+
 
 @dataclass
 class EvaluationReport:
@@ -123,6 +358,35 @@ class EvaluationReport:
     hitl_auto_approved_count: int = 0
     hitl_auto_held_count: int = 0
     is_human_approved: bool = False
+    # AC6: TM Echo Gate (regression canary) and run provenance
+    echo_gate_result: Optional[EchoGateResult] = None
+    run_mode: str = "unknown"
+    model_ids_used: list[str] = field(default_factory=list)
+    provenance: Optional[RunProvenance] = None
+    per_model_gates: list[PerModelGateNumbers] = field(default_factory=list)
+
+    @property
+    def gates_are_reportable(self) -> bool:
+        """Gate verdicts are only issued for a real model run.
+
+        A stub run's draft_ko is a copy of the top TM hit, so scoring it measures
+        the TM index rather than the translator.  run_mode must say ``real``.
+        """
+        return self.run_mode == REAL_RUN_MODE
+
+    @property
+    def final_passed(self) -> Optional[bool]:
+        """Overall pass: the three hard gates AND the TM echo gate.
+
+        ``None`` when the run is not a real model run — no verdict is issued.
+        """
+        if not self.gates_are_reportable:
+            return None
+        if not self.verdict.passed:
+            return False
+        if self.echo_gate_result is not None and not self.echo_gate_result.passed:
+            return False
+        return True
 
 
 def _tm_predictions(
@@ -205,9 +469,10 @@ def _load_pipeline_output(
     """
     hold_out: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
 
-    # Parse ALL field records — collect header for AC8 HITL stats.
+    # Parse ALL field records — collect header for AC6 run_mode and AC8 HITL stats.
     field_records: list[dict] = []
     hitl_stats: Optional[dict] = None
+    run_mode = "unknown"
     with pipeline_output_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -215,14 +480,19 @@ def _load_pipeline_output(
                 continue
             obj = json.loads(line)
             if "_meta" in obj:
-                # AC8: extract hitl_stats from eval_autoresume header.
-                if obj.get("_meta") == "eval_autoresume_header":
+                meta = obj.get("_meta")
+                if meta == "run_pipeline_header":
+                    run_mode = obj.get("run_mode", "unknown")
+                elif meta == "eval_autoresume_header":
                     hitl_stats = obj.get("hitl_stats")
                 continue
             field_records.append(obj)
 
     # AC7: synthesize field-level records into card-level judgments.
     synthesis = synthesize_field_to_card(field_records, hold_out)
+    # AC6: populate run provenance and raw field records for echo gate.
+    synthesis.run_mode = run_mode
+    synthesis.field_records = field_records
 
     # Count pending cards: interrupted=True AND NOT auto_approved.
     # In eval_autoresume mode, auto_approved=True means the graph completed
@@ -266,6 +536,9 @@ def run_evaluation(
     hitl_auto_approved_count: int = 0,
     hitl_auto_held_count: int = 0,
     is_human_approved: bool = False,
+    run_mode: str = "unknown",
+    model_ids_used: Optional[list[str]] = None,
+    provenance: Optional[RunProvenance] = None,
 ) -> EvaluationReport:
     """Evaluate pipeline predictions through hard gates and observation metrics.
 
@@ -368,6 +641,34 @@ def run_evaluation(
                 # observation score is invented for a judgment the model never made.
                 obs_error = f"{type(exc).__name__}: {exc}"
 
+    # AC6: TM Echo Gate — compute from field_synthesis.field_records when available.
+    echo_gate_result: Optional[EchoGateResult] = None
+    if field_synthesis is not None and field_synthesis.field_records:
+        hold_out_cards = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
+        echo_gate_result = score_echo_gate(field_synthesis.field_records, hold_out_cards)
+
+    # Propagate run_mode / model ids from the pipeline header when not passed in.
+    effective_run_mode = run_mode
+    if effective_run_mode == "unknown" and provenance is not None:
+        effective_run_mode = provenance.run_mode
+    if effective_run_mode == "unknown" and field_synthesis is not None:
+        effective_run_mode = field_synthesis.run_mode
+
+    effective_model_ids = list(model_ids_used) if model_ids_used else []
+    if not effective_model_ids and provenance is not None:
+        effective_model_ids = list(provenance.models_used)
+
+    # run_model_provenance: a mixed run's single average represents no model,
+    # so gate numbers are also broken down per producing model.
+    per_model: list[PerModelGateNumbers] = []
+    if field_synthesis is not None and field_synthesis.field_records:
+        per_model = per_model_gate_numbers(verdict, field_synthesis.field_records)
+
+    # model_invocation_failure is produced by run_pipeline, not inferable here:
+    # take the header count when the synthesis has not already classified it.
+    if provenance is not None and provenance.model_failure_count:
+        empty_by_cause.setdefault("model_invocation_failure", 0)
+
     return EvaluationReport(
         verdict=verdict,
         obs=obs,
@@ -389,6 +690,11 @@ def run_evaluation(
         hitl_auto_approved_count=hitl_auto_approved_count,
         hitl_auto_held_count=hitl_auto_held_count,
         is_human_approved=is_human_approved,
+        echo_gate_result=echo_gate_result,
+        run_mode=effective_run_mode,
+        model_ids_used=effective_model_ids,
+        provenance=provenance,
+        per_model_gates=per_model,
     )
 
 
@@ -417,6 +723,53 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         print(f"  자동 보류 건수:  {report.hitl_auto_held_count}")
         print()
 
+    # AC6 run_model_provenance: run mode and model ids are part of the artifact.
+    print(f"=== 실행 모드: {report.run_mode.upper()} ===")
+    prov = report.provenance
+    if report.run_mode == "stub":
+        print("  ※ 스텁 실행 — 초벌이 TM 상위 1건의 복사본이므로 게이트 판정을 내지 않습니다.")
+        print("  실제 게이트 판정은 --llm-model로 Bedrock 모델을 지정한 뒤 재실행하십시오.")
+    elif report.run_mode != REAL_RUN_MODE:
+        print("  ※ 실행 모드를 확인할 수 없습니다(run_pipeline_header 없음) — 게이트 판정을 내지 않습니다.")
+    else:
+        if prov is not None and prov.primary_model_id:
+            print(f"  1순위 모델: {prov.primary_model_id}")
+        if report.model_ids_used:
+            print(f"  실제 사용 모델: {', '.join(report.model_ids_used)}")
+        if prov is not None and prov.mixed_run:
+            print("  ※ 혼합 실행 — 둘 이상의 모델이 쓰였습니다. 단일 평균은 어느 모델도 대표하지 않습니다.")
+            for mid, cnt in sorted(prov.model_record_counts.items()):
+                print(f"    - {mid}: {cnt} 레코드")
+        if prov is not None and prov.model_attempts_log:
+            failures = [a for a in prov.model_attempts_log if not a.get("success")]
+            print(f"  모델 시도 로그: 총 {len(prov.model_attempts_log)}회, 실패 {len(failures)}회")
+            seen: set[str] = set()
+            for a in failures:
+                key = f"{a.get('model_id')}|{a.get('error', '')[:80]}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                print(
+                    f"    - {a.get('model_id')} (시도 {a.get('attempt')}): "
+                    f"{a.get('error', '')[:160]}"
+                )
+        if prov is not None and prov.model_failure_count:
+            print(f"  전 모델 실패로 빈 예측이 된 필드: {prov.model_failure_count}건")
+    print()
+
+    # Per-model gate numbers — required whenever more than one model produced records.
+    if report.per_model_gates and len(report.per_model_gates) > 1:
+        print("=== 모델별 게이트 수치 (혼합 실행) ===")
+        for pm in report.per_model_gates:
+            def _f(v: Optional[float]) -> str:
+                return "n/a" if v is None else f"{v:.4f}"
+            print(
+                f"  {pm.model_id}: 카드 {pm.card_count} / 필드 {pm.field_record_count} | "
+                f"게이트1 {_f(pm.gate1_rate)} | 게이트2 {_f(pm.gate2_rate)} | "
+                f"게이트3 중앙 {_f(pm.gate3_median)} | 에코 {_f(pm.echo_rate)}"
+            )
+        print()
+
     # AC6: Named prediction series.
     # Two series coexist in the same run; gates score pipeline_predictions.
     print("=== 예측 계열 (AC6) ===")
@@ -439,46 +792,49 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         print("  tm_only_baseline: 미측정 (게이트 3 임계 유도 없음)")
     print()
 
-    print(format_verdict(report.verdict))
+    if report.run_mode != "stub":
+        print(format_verdict(report.verdict))
 
-    # (f) Gate1Result.llm_judged
-    llm_judged = report.verdict.gate1.llm_judged
-    llm_judged_label = "완료" if llm_judged else "미완료 (추출 용어 미판정)"
-    print(f"  용어집 LLM 판정 상태: {llm_judged_label}")
+        # (f) Gate1Result.llm_judged
+        llm_judged = report.verdict.gate1.llm_judged
+        llm_judged_label = "완료" if llm_judged else "미완료 (추출 용어 미판정)"
+        print(f"  용어집 LLM 판정 상태: {llm_judged_label}")
 
-    # (d) Gate threshold sources
-    print()
-    print("=== 게이트 임계 출처 ===")
-    print(f"  게이트 1 임계: SERVICE.md §5 명시값 >= {gate1_term_compliance.THRESHOLD:.0%}")
-    print(f"  게이트 2 임계: SERVICE.md §5 명시값 {gate2_symbol_preservation.THRESHOLD:.0%}")
-    # Gate 2 structural-fail notice
-    if not report.verdict.gate2.passed:
-        actual_rate = report.verdict.gate2.preservation_rate
-        threshold = gate2_symbol_preservation.THRESHOLD
-        if actual_rate < threshold:
+        # (d) Gate threshold sources
+        print()
+        print("=== 게이트 임계 출처 ===")
+        print(f"  게이트 1 임계: SERVICE.md §5 명시값 >= {gate1_term_compliance.THRESHOLD:.0%}")
+        print(f"  게이트 2 임계: SERVICE.md §5 명시값 {gate2_symbol_preservation.THRESHOLD:.0%}")
+        # Gate 2 structural-fail notice
+        if not report.verdict.gate2.passed:
+            actual_rate = report.verdict.gate2.preservation_rate
+            threshold = gate2_symbol_preservation.THRESHOLD
+            if actual_rate < threshold:
+                print(
+                    f"  ※ 게이트 2 구조적 불합격: 참조 코퍼스 실측 {actual_rate:.1%}"
+                    f" < 임계 {threshold:.0%} — 모든 출력에 대해 미달이 예상됩니다."
+                )
+
+        if report.tm_baseline_median is not None:
+            factor = gate3_edit_distance.THRESHOLD_FACTOR
+            derived = report.gate3_derived_threshold
+            hardcoded = gate3_edit_distance.THRESHOLD
             print(
-                f"  ※ 게이트 2 구조적 불합격: 참조 코퍼스 실측 {actual_rate:.1%}"
-                f" < 임계 {threshold:.0%} — 모든 출력에 대해 미달이 예상됩니다."
+                f"  게이트 3 임계: TM-only 베이스라인 측정값 {report.tm_baseline_median:.4f}"
+                f" × {factor:.2f} = {derived:.4f}"
+                f"  (출처: {report.gate3_threshold_provenance}"
+                f", 미사용 모듈 상수: {hardcoded:.4f})"
             )
-
-    if report.tm_baseline_median is not None:
-        factor = gate3_edit_distance.THRESHOLD_FACTOR
-        derived = report.gate3_derived_threshold
-        hardcoded = gate3_edit_distance.THRESHOLD
-        print(
-            f"  게이트 3 임계: TM-only 베이스라인 측정값 {report.tm_baseline_median:.4f}"
-            f" × {factor:.2f} = {derived:.4f}"
-            f"  (출처: {report.gate3_threshold_provenance}"
-            f", 미사용 모듈 상수: {hardcoded:.4f})"
-        )
-        print(
-            f"  ※ 게이트 3 합격 판정에 실제로 쓰인 임계: {report.verdict.gate3.threshold:.4f}"
-        )
+            print(
+                f"  ※ 게이트 3 판정에 실제로 쓰인 임계: {report.verdict.gate3.threshold:.4f}"
+            )
+        else:
+            print(
+                f"  게이트 3 임계: 모듈 내장 상수 {gate3_edit_distance.THRESHOLD:.4f}"
+                " (TM 베이스라인 미측정)"
+            )
     else:
-        print(
-            f"  게이트 3 임계: 모듈 내장 상수 {gate3_edit_distance.THRESHOLD:.4f}"
-            " (TM 베이스라인 미측정)"
-        )
+        print("  [게이트 판정·임계 출처 생략 — stub 실행]")
 
     # (e) Interrupt-pending count/ratio
     print()
@@ -496,6 +852,7 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         "tm_search_failure": "TM 검색 실패",
         "guard_rejected_in_review_queue": "가드 실패로 검토 큐 잔류",
         "approval_incomplete": "승인 미완",
+        "model_invocation_failure": "Bedrock 모델 호출 실패",
     }
     for cause in ALL_CAUSES:
         print(f"  {cause_labels[cause]} ({cause}): {report.empty_by_cause.get(cause, 0)}건")
@@ -524,14 +881,43 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         )
     else:
         print("  2단 카드별: 필드 레코드 없음 (평탄 예측 계열 — 카드 1장 = 예측 1개)")
-    print(
-        f"  3단 게이트별 비율/합격: 게이트1 {report.verdict.gate1.compliance_rate:.1%}"
-        f" / 게이트2 {report.verdict.gate2.preservation_rate:.1%}"
-        f" / 게이트3 중앙값 {report.verdict.gate3.median_distance:.4f}"
-    )
-    print(
-        f"  4단 최종 판정(gate_verdict.combine): {report.verdict.verdict_label}"
-    )
+    if report.run_mode != "stub":
+        print(
+            f"  3단 게이트별 비율/합격: 게이트1 {report.verdict.gate1.compliance_rate:.1%}"
+            f" / 게이트2 {report.verdict.gate2.preservation_rate:.1%}"
+            f" / 게이트3 중앙값 {report.verdict.gate3.median_distance:.4f}"
+        )
+        print(
+            f"  4단 최종 판정(gate_verdict.combine): {report.verdict.verdict_label}"
+        )
+
+    # AC6: TM Echo Gate — regression canary
+    print()
+    print("=== TM 에코 게이트 (AC6 — 회귀 카나리아) ===")
+    eg = report.echo_gate_result
+    if eg is None:
+        print("  에코 게이트: 필드 레코드 없음 — pipeline_output.jsonl 로드 시에만 측정됩니다.")
+    else:
+        status = "통과" if eg.passed else "미달"
+        print(f"  결과: {status}")
+        print(f"  실측 에코율: {eg.echo_count}/{eg.denominator} = {eg.actual_echo_rate:.3f}")
+        print(f"  정당한 우연일치율 (TM top-1 == 참조 KO): {eg.coincidence_count}/{eg.denominator} = {eg.coincidence_rate:.3f}")
+        print(f"  ECHO_FLOOR (정책 하한): {eg.echo_floor:.2f}")
+        print(f"  임계 = max(ECHO_FLOOR, 우연일치율) = {eg.threshold:.3f}")
+        print(f"  분모 n = {eg.denominator}  (tm_hits 존재 AND draft_ko 비어 있지 않은 레코드)")
+        print(
+            "  ※ 이 게이트는 적대적 방어 장치가 아니라 프롬프트·검색 회귀 카나리아입니다. "
+            "문자 하나로 회피되며, 스텁 실행 방어는 진입구 봉쇄(--llm-model 필수)가 담당합니다."
+        )
+        print(f"  실행 모드: {report.run_mode}  모델: {', '.join(report.model_ids_used) or 'n/a'}")
+
+    # Final pass = three hard gates AND the TM echo gate.
+    print()
+    if report.final_passed is None:
+        print(f"=== 최종 판정: 보류 (run_mode={report.run_mode}, 실제 모델 실행 아님) ===")
+    else:
+        label = "합격" if report.final_passed else "불합격"
+        print(f"=== 최종 판정(하드 게이트 3 + TM 에코 게이트): {label} ===")
 
     print()
     if report.obs is not None:
@@ -597,7 +983,18 @@ def main() -> None:
     parser.add_argument(
         "--llm-model",
         default=None,
-        help="Bedrock model ID for --run-pipeline mode (omit to use stub LLM).",
+        help=(
+            "Bedrock model ID from availableModelsOnBedrock.md. Required with "
+            "--run-pipeline; there is no stub default."
+        ),
+    )
+    parser.add_argument(
+        "--allow-stub-output",
+        action="store_true",
+        help=(
+            "Wiring-test only: accept a --pipeline-output file whose header is not "
+            "run_mode=real. Gate verdicts are still withheld for such a run."
+        ),
     )
     args = parser.parse_args()
 
@@ -613,6 +1010,7 @@ def main() -> None:
     tm_baseline_median: Optional[float] = None
     tm_baseline_predictions: Optional[list[str]] = None
     field_synthesis: Optional[FieldSynthesisReport] = None
+    provenance: Optional[RunProvenance] = None
     # AC8 HITL mode fields
     hitl_mode: Optional[str] = None
     hitl_trigger_count = 0
@@ -630,6 +1028,13 @@ def main() -> None:
     if args.run_pipeline:
         # AC6: Run the FULL pipeline on ALL hold-out cards.
         # Card count derived from file (hold_out_size_source: file, not constant).
+        # Stub prevention: --llm-model required; stub runs cannot reach gate scoring.
+        if not args.llm_model:
+            parser.error(
+                "--llm-model is required with --run-pipeline. "
+                "Stub runs produce meaningless gate scores. "
+                "Specify a Bedrock model ID from availableModelsOnBedrock.md."
+            )
         from run_pipeline import run_pipeline as _run_pipeline
 
         all_hold_out = json.loads(hold_out_path.read_text(encoding="utf-8"))
@@ -646,6 +1051,7 @@ def main() -> None:
             output_path=pipeline_output_path,
             llm_model=args.llm_model,
         )
+        provenance = _read_run_header(pipeline_output_path)
         predictions, pending_count, empty_prediction_count, pending_ratio, field_synthesis, _ = (
             _load_pipeline_output(pipeline_output_path, hold_out_path)
         )
@@ -661,6 +1067,17 @@ def main() -> None:
 
     elif args.pipeline_output:
         pipeline_output_path = Path(args.pipeline_output)
+        # stub_prevention (c): an arbitrary jsonl must not be scored as if it were
+        # a real model run.  A stub-era file left in the repo reproduces the same
+        # numbers with no flag, so the header is checked before anything is scored.
+        provenance = _read_run_header(pipeline_output_path)
+        if provenance.run_mode != REAL_RUN_MODE and not args.allow_stub_output:
+            parser.error(
+                f"{pipeline_output_path} has run_mode={provenance.run_mode!r}, not "
+                f"{REAL_RUN_MODE!r}. Gate numbers from a stub or headerless run are "
+                "invalid. Re-run run_pipeline.py with --llm-model, or pass "
+                "--allow-stub-output to inspect it without a gate verdict."
+            )
         predictions, pending_count, empty_prediction_count, pending_ratio, field_synthesis, _hitl = (
             _load_pipeline_output(pipeline_output_path, hold_out_path)
         )
@@ -730,6 +1147,7 @@ def main() -> None:
         hitl_auto_approved_count=hitl_auto_approved_count,
         hitl_auto_held_count=hitl_auto_held_count,
         is_human_approved=is_human_approved,
+        provenance=provenance,
     )
     print_evaluation_report(report)
 

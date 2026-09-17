@@ -46,6 +46,82 @@ from translation_graph import build_translation_graph, expand_card_to_field_inpu
 
 
 # ---------------------------------------------------------------------------
+# Bedrock model fallback chain (availableModelsOnBedrock.md order)
+# ---------------------------------------------------------------------------
+
+FALLBACK_MODELS: tuple[str, ...] = (
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "us.amazon.nova-pro-v1:0",
+    "us.amazon.nova-2-lite-v1:0",
+    "global.amazon.nova-2-lite-v1:0",
+    "us.amazon.nova-lite-v1:0",
+)
+
+# Exception message patterns that indicate throttling / capacity issues.
+_RETRYABLE_PATTERNS = (
+    "ThrottlingException",
+    "throttl",
+    "TooManyRequests",
+    "ServiceUnavailable",
+    "ModelNotReady",
+    "modelStreamError",
+    "RequestTooLarge",
+)
+
+
+class _FallbackLLM:
+    """Bedrock LLM wrapper that retries through FALLBACK_MODELS on throttling failures.
+
+    Never falls back to _StubLLM — if all models fail, raises RuntimeError.
+    Tracks last_model_id and model_attempts_log for run provenance reporting.
+    """
+
+    def __init__(self, primary_model_id: str) -> None:
+        self._model_ids: list[str] = [primary_model_id] + [
+            m for m in FALLBACK_MODELS if m != primary_model_id
+        ]
+        self.last_model_id: str = primary_model_id
+        self.model_attempts_log: list[dict] = []
+        self.models_used: set[str] = set()
+
+    def invoke(self, prompt: str) -> Any:
+        import time
+        from langchain_aws import ChatBedrockConverse
+
+        last_error: Exception | None = None
+        for model_id in self._model_ids:
+            for attempt in range(1, 4):  # up to 3 attempts per model
+                try:
+                    response = ChatBedrockConverse(model=model_id).invoke(prompt)
+                    self.last_model_id = model_id
+                    self.models_used.add(model_id)
+                    self.model_attempts_log.append(
+                        {"model_id": model_id, "attempt": attempt, "success": True}
+                    )
+                    return response
+                except Exception as exc:
+                    err_str = str(exc)
+                    retryable = any(p in err_str for p in _RETRYABLE_PATTERNS)
+                    self.model_attempts_log.append({
+                        "model_id": model_id,
+                        "attempt": attempt,
+                        "success": False,
+                        "error": err_str[:300],
+                        "retryable": retryable,
+                    })
+                    last_error = exc
+                    if retryable and attempt < 3:
+                        time.sleep(2 ** attempt)
+                        continue
+                    break  # non-retryable or exhausted retries → try next model
+
+        raise RuntimeError(
+            f"All Bedrock fallback models failed. "
+            f"Models tried: {self._model_ids}. Last error: {last_error}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Stub LLM
 # ---------------------------------------------------------------------------
 
@@ -218,6 +294,64 @@ def _state_to_draft_record(state: CardState) -> dict:
     return record
 
 
+def _empty_model_failure_record(card: dict, initial: dict, error: str) -> dict:
+    """Build an empty DraftRecord for a field whose model invocation failed.
+
+    empty_prediction_cause = model_invocation_failure: every model in the
+    availableModelsOnBedrock.md fallback chain failed for this field.  The
+    record keeps draft_ko="" — neither stub output nor the hold-out ko_text
+    is substituted (prediction_fallback_policy).
+    """
+    is_rule = bool((initial.get("en_rule") or "").strip())
+    return {
+        "card_id": card.get("id", ""),
+        "field": "text" if is_rule else "flavor",
+        "route": "rule" if is_rule else "flavor",
+        "draft_ko": "",
+        "tm_hits": [],
+        "injected_terms": [],
+        "tm_confidence": 0.0,
+        "glossary_llm_judged": False,
+        "new_terms": [],
+        "recording_new_terms": [],
+        "interrupted": False,
+        "empty_cause": "model_invocation_failure",
+        "model_error": error[:300],
+        "model_id": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# AC8: deterministic auto-responder (eval_autoresume mode)
+# ---------------------------------------------------------------------------
+
+#: Guard/trigger names whose interrupts the auto-responder refuses to resolve.
+#: A blocking ``new_term`` means the source text carries an unregistered subtype
+#: or proper noun; no machine can invent its Korean rendering, so approving the
+#: draft as-is would launder an unresolved term into approved.jsonl.  Held
+#: fields keep an empty prediction (empty_prediction_cause=approval_incomplete);
+#: the hold-out ko_text is never substituted.
+AUTO_RESPONDER_HOLD_TRIGGERS: frozenset[str] = frozenset({"new_term"})
+
+
+def auto_respond(interrupt_payload: dict) -> str:
+    """Decide the eval_autoresume resume value from the interrupt payload alone.
+
+    Returns ``"approved"`` (resume with the draft unchanged) or ``"hold"``
+    (do not resume; the field yields an empty prediction).
+
+    The decision is a pure function of ``interrupt_payload["violations"]`` — the
+    same payload a human reviewer would see.  It never reads data/hold_out.json
+    or any reference ko_text (eval_mode_hitl_policy), and it carries no state
+    across fields, so repeated runs over the same input are byte-identical.
+    """
+    violations = interrupt_payload.get("violations") or []
+    for v in violations:
+        if v.get("guard") in AUTO_RESPONDER_HOLD_TRIGGERS:
+            return "hold"
+    return "approved"
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -229,7 +363,7 @@ def run_pipeline(
     assets_dir: Path,
     n_cards: int,
     output_path: Path,
-    llm_model: str | None = None,
+    llm_model: str | None,
     tm_threshold_percentile: float = 20.0,
     eval_autoresume: bool = False,
     approved_store_path: Path | str | None = None,
@@ -240,6 +374,8 @@ def run_pipeline(
     Returns the list of draft records saved to *output_path*.
 
     Args:
+        llm_model: Bedrock model ID. Pass None only for wiring/unit tests (stub LLM).
+            No default — explicit opt-in required (Seed: stub_prevention).
         eval_autoresume: AC8 eval mode. When True, the graph runs with a
             MemorySaver checkpointer so interrupt() actually fires, and a
             deterministic auto-responder supplies Command(resume="approved")
@@ -278,13 +414,14 @@ def run_pipeline(
     print(f"[run_pipeline] index built with {len(tm_index)} records")
 
     # ---------- Choose LLM ----------
-    if llm_model:
-        from langchain_aws import ChatBedrockConverse
-        llm: Any = ChatBedrockConverse(model=llm_model)
-        print(f"[run_pipeline] using Bedrock model: {llm_model}")
+    if llm_model is not None:
+        llm: Any = _FallbackLLM(llm_model)
+        run_mode = "real"
+        print(f"[run_pipeline] using Bedrock model: {llm_model} (with fallback chain)")
     else:
         llm = _StubLLM()
-        print("[run_pipeline] using stub LLM (no model credentials needed)")
+        run_mode = "stub"
+        print("[run_pipeline] using stub LLM (wiring/unit test mode)")
 
     # ---------- AC4: Derive TM confidence threshold from current run ----------
     # Reference leakage ban: only hold-out EN texts are used — ko_text is never read.
@@ -337,51 +474,100 @@ def run_pipeline(
     hitl_trigger_count = 0
     hitl_auto_approved_count = 0
     hitl_auto_held_count = 0
+    # empty_prediction_cause: model_invocation_failure count.
+    model_failure_count = 0
 
     for card in cards:
         field_inputs = expand_card_to_field_inputs(card)
         for field_idx, initial in enumerate(field_inputs):
-            if eval_autoresume:
-                # AC8 eval_autoresume mode:
-                # 1. Invoke with a per-(card, field) thread_id so the checkpointer
-                #    tracks each field independently.
-                # 2. If interrupt() fires, fire the deterministic auto-responder
-                #    (Command(resume="approved")) without consulting ko_text.
-                # 3. Record auto_approved and eval_autoresume flags in the output.
-                from langgraph.types import Command
+            # model_invocation_failure: all Bedrock fallback models failed for
+            # this field. Record an empty prediction with its cause — never
+            # substitute stub output or hold-out ko_text (prediction_fallback_policy).
+            try:
+                if eval_autoresume:
+                    # AC8 eval_autoresume mode:
+                    # 1. Invoke with a per-(card, field) thread_id so the checkpointer
+                    #    tracks each field independently.
+                    # 2. If interrupt() fires, fire the deterministic auto-responder
+                    #    (Command(resume="approved")) without consulting ko_text.
+                    # 3. Record auto_approved and eval_autoresume flags in the output.
+                    from langgraph.types import Command
 
-                field_label = "text" if (initial.get("en_rule") or "").strip() else "flavor"
-                thread_id = f"{card.get('id', '')}:{field_label}:{field_idx}"
-                config = {"configurable": {"thread_id": thread_id}}
+                    field_label = "text" if (initial.get("en_rule") or "").strip() else "flavor"
+                    thread_id = f"{card.get('id', '')}:{field_label}:{field_idx}"
+                    config = {"configurable": {"thread_id": thread_id}}
 
-                state = graph.invoke(initial, config=config)
+                    state = graph.invoke(initial, config=config)
 
-                if isinstance(state, dict) and "__interrupt__" in state:
-                    # Interrupt fired: auto-responder approves as-is (deterministic,
-                    # no ko_text consulted — eval_mode_hitl_policy constraint).
-                    hitl_trigger_count += 1
-                    state = graph.invoke(Command(resume="approved"), config=config)
-                    record = _state_to_draft_record(state)
-                    record["interrupted"] = True
-                    record["eval_autoresume"] = True
-                    record["auto_approved"] = True
-                    hitl_auto_approved_count += 1
+                    if isinstance(state, dict) and "__interrupt__" in state:
+                        # Interrupt fired for real (never bypassed).  The
+                        # deterministic auto-responder decides from the same
+                        # payload a human reviewer would see — no ko_text is
+                        # consulted (eval_mode_hitl_policy).
+                        hitl_trigger_count += 1
+                        payload = state["__interrupt__"][0].value
+                        decision = auto_respond(payload)
+                        if decision == "approved":
+                            state = graph.invoke(Command(resume="approved"), config=config)
+                            record = _state_to_draft_record(state)
+                            record["interrupted"] = True
+                            record["eval_autoresume"] = True
+                            record["auto_approved"] = True
+                            record["auto_held"] = False
+                            hitl_auto_approved_count += 1
+                        else:
+                            # Held: the graph stays paused at interrupt().  The
+                            # field yields an empty prediction rather than an
+                            # unreviewed draft; hold-out ko_text is never
+                            # substituted (prediction_fallback_policy).
+                            record = _state_to_draft_record(state)
+                            record["draft_ko"] = ""
+                            record["interrupted"] = True
+                            record["eval_autoresume"] = True
+                            record["auto_approved"] = False
+                            record["auto_held"] = True
+                            record["empty_cause"] = "approval_incomplete"
+                            record["hold_reasons"] = sorted(
+                                {
+                                    v.get("guard", "")
+                                    for v in (payload.get("violations") or [])
+                                    if v.get("guard") in AUTO_RESPONDER_HOLD_TRIGGERS
+                                }
+                            )
+                            hitl_auto_held_count += 1
+                    else:
+                        record = _state_to_draft_record(state)
+                        record["interrupted"] = False
+                        record["eval_autoresume"] = True
+                        record["auto_approved"] = False
+                        record["auto_held"] = False
                 else:
-                    record = _state_to_draft_record(state)
-                    record["interrupted"] = False
-                    record["eval_autoresume"] = True
-                    record["auto_approved"] = False
-            else:
-                # Operational mode: interrupt fires and graph pauses — no auto-resume.
-                # reference_leakage_ban: never substitute hold-out ko_text as draft_ko.
-                state = graph.invoke(initial)
+                    # Operational mode: interrupt fires and graph pauses — no auto-resume.
+                    # reference_leakage_ban: never substitute hold-out ko_text as draft_ko.
+                    state = graph.invoke(initial)
 
-                if isinstance(state, dict) and "__interrupt__" in state:
-                    record = _state_to_draft_record(state)
-                    record["interrupted"] = True
-                else:
-                    record = _state_to_draft_record(state)
-                    record["interrupted"] = False
+                    if isinstance(state, dict) and "__interrupt__" in state:
+                        record = _state_to_draft_record(state)
+                        record["interrupted"] = True
+                    else:
+                        record = _state_to_draft_record(state)
+                        record["interrupted"] = False
+
+            except RuntimeError as exc:
+                record = _empty_model_failure_record(card, initial, str(exc))
+                model_failure_count += 1
+                print(
+                    f"[run_pipeline] model_invocation_failure on "
+                    f"{record['card_id']}:{record['field']} — {exc}"
+                )
+
+            # draft_record contract: field is the primary unit alongside card_id.
+            record.setdefault("field", "text" if record.get("route") == "rule" else "flavor")
+
+            # run_model_provenance: record which model generated this draft.
+            # Failure records already carry model_id=None and keep it.
+            if "model_id" not in record:
+                record["model_id"] = llm.last_model_id if isinstance(llm, _FallbackLLM) else None
 
             draft_records.append(record)
             route = record["route"]
@@ -396,13 +582,28 @@ def run_pipeline(
 
     # ---------- Save output ----------
     # AC4: Write a metadata header line first with the threshold derivation record.
-    # This records the measured_in_run threshold provenance in the output artifact.
+    # AC6: run_mode and model provenance recorded for echo gate and stub prevention.
     # AC8: In eval_autoresume mode, also write an eval_autoresume_header with HITL stats.
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata = {
+    metadata: dict[str, Any] = {
         "_meta": "run_pipeline_header",
+        "run_mode": run_mode,
+        "primary_model_id": llm_model,
         "tm_threshold_derivation": tm_threshold_derivation,
+        "model_failure_count": model_failure_count,
     }
+    if isinstance(llm, _FallbackLLM):
+        metadata["models_used"] = sorted(llm.models_used)
+        metadata["model_attempts_log"] = llm.model_attempts_log
+        mixed = len(llm.models_used) > 1
+        metadata["mixed_run"] = mixed
+        if mixed:
+            # Seed: mixed run must be disclosed.
+            model_counts: dict[str, int] = {}
+            for rec in draft_records:
+                mid = rec.get("model_id") or "unknown"
+                model_counts[mid] = model_counts.get(mid, 0) + 1
+            metadata["model_record_counts"] = model_counts
     with output_path.open("w", encoding="utf-8") as f:
         f.write(json.dumps(metadata, ensure_ascii=False) + "\n")
         if eval_autoresume:
@@ -445,7 +646,29 @@ def main() -> None:
     parser.add_argument("--assets-dir", default="assets", help="Directory with glossary.json and conflicts.json")
     parser.add_argument("--cards", type=int, default=3, help="Number of hold-out cards to process (default: 3)")
     parser.add_argument("--output", default="pipeline_output.jsonl", help="Output file path")
-    parser.add_argument("--llm-model", default=None, help="Bedrock model ID (omit for stub LLM)")
+    parser.add_argument(
+        "--llm-model",
+        default=None,
+        help="Bedrock model ID from availableModelsOnBedrock.md (required unless --allow-stub)",
+    )
+    parser.add_argument(
+        "--allow-stub",
+        action="store_true",
+        help=(
+            "Wiring-test only: run with _StubLLM, which echoes the top TM hit. "
+            "Gate scores from a stub run are meaningless and are not reported."
+        ),
+    )
+    parser.add_argument(
+        "--approved-store",
+        default=None,
+        help="Path for approved.jsonl (default: module default). Separate concurrent runs.",
+    )
+    parser.add_argument(
+        "--new-term-candidates",
+        default=None,
+        help="Path for new_term_candidates.json (default: module default).",
+    )
     parser.add_argument(
         "--eval-autoresume",
         action="store_true",
@@ -456,6 +679,14 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    # stub_prevention: the stub is reachable only behind an explicit flag.
+    if not args.llm_model and not args.allow_stub:
+        parser.error(
+            "--llm-model is required. Pass a Bedrock model ID from "
+            "availableModelsOnBedrock.md, or --allow-stub for wiring tests only."
+        )
+    if args.llm_model and args.allow_stub:
+        parser.error("--llm-model and --allow-stub are mutually exclusive.")
 
     records = run_pipeline(
         data_dir=Path(args.data_dir),
@@ -464,6 +695,8 @@ def main() -> None:
         output_path=Path(args.output),
         llm_model=args.llm_model,
         eval_autoresume=args.eval_autoresume,
+        approved_store_path=args.approved_store,
+        new_term_candidates_path=args.new_term_candidates,
     )
     print(f"\n[run_pipeline] done — {len(records)} draft records saved")
 

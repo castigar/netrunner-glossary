@@ -956,6 +956,7 @@ class TestRunPipelineModeCoversWholeHoldOut:
             "--data-dir", str(HOLD_OUT.parent),
             "--assets-dir", str(GLOSSARY.parent),
             "--run-pipeline",
+            "--llm-model", "global.anthropic.claude-haiku-4-5-20251001-v1:0",
             "--skip-llm-judge",
         ]
         try:
@@ -1004,3 +1005,383 @@ def test_obs_failure_is_reported_and_gates_still_scored(hold_out_cards, capsys):
     out = capsys.readouterr().out
     assert "관찰 지표" in out
     assert "최종 판정" in out
+
+
+# ---------------------------------------------------------------------------
+# AC6: TM Echo Gate tests
+# ---------------------------------------------------------------------------
+
+
+class TestEchoGate:
+    """TM Echo Gate: regression canary that catches LLM-parrots-TM regression."""
+
+    def test_score_echo_gate_passes_when_no_echo(self):
+        """Echo gate passes when draft_ko differs from tm_hits[0].ko_text."""
+        from evaluate_pipeline import ECHO_FLOOR, EchoGateResult, score_echo_gate
+
+        hold_out = [{"id": "card1", "ko_text": "가나다", "ko_flavor": ""}]
+        field_records = [{
+            "card_id": "card1",
+            "route": "rule",
+            "draft_ko": "다른 번역",
+            "tm_hits": [{"id": "x", "ko_text": "TM 번역", "en_text": "...", "score": 0.5}],
+        }]
+        result = score_echo_gate(field_records, hold_out)
+        assert isinstance(result, EchoGateResult)
+        assert result.echo_count == 0
+        assert result.denominator == 1
+        assert result.actual_echo_rate == 0.0
+        assert result.passed is True
+
+    def test_score_echo_gate_detects_echo(self):
+        """Echo gate fails when draft_ko == tm_hits[0].ko_text and rate exceeds threshold."""
+        from evaluate_pipeline import ECHO_FLOOR, score_echo_gate
+
+        # Make 100% of drafts echo TM (rate = 1.0 >> ECHO_FLOOR)
+        hold_out = [{"id": f"c{i}", "ko_text": f"ref{i}", "ko_flavor": ""} for i in range(10)]
+        field_records = [{
+            "card_id": f"c{i}",
+            "route": "rule",
+            "draft_ko": f"TM{i}",
+            "tm_hits": [{"id": "x", "ko_text": f"TM{i}", "en_text": "...", "score": 0.5}],
+        } for i in range(10)]
+        result = score_echo_gate(field_records, hold_out)
+        assert result.echo_count == 10
+        assert result.actual_echo_rate == 1.0
+        assert result.passed is False  # 1.0 >> ECHO_FLOOR=0.05
+
+    def test_score_echo_gate_echo_floor_is_005(self):
+        """ECHO_FLOOR must be 0.05 — policy constant (same status as gate1's 0.95)."""
+        from evaluate_pipeline import ECHO_FLOOR
+        assert ECHO_FLOOR == 0.05
+
+    def test_score_echo_gate_threshold_is_max_floor_and_coincidence(self):
+        """threshold = max(ECHO_FLOOR, coincidence_rate_measured_in_run)."""
+        from evaluate_pipeline import ECHO_FLOOR, score_echo_gate
+
+        # TM top-1 matches ref for 3/10 cards → coincidence=0.3 > ECHO_FLOOR=0.05
+        hold_out = [{"id": f"c{i}", "ko_text": f"TM{i}", "ko_flavor": ""} for i in range(10)]
+        field_records = [{
+            "card_id": f"c{i}",
+            "route": "rule",
+            "draft_ko": "다른 번역",
+            "tm_hits": [{"id": "x", "ko_text": f"TM{i}", "en_text": "...", "score": 0.5}],
+        } for i in range(10)]
+        result = score_echo_gate(field_records, hold_out)
+        assert result.coincidence_count == 10  # all TM top-1 == ref
+        assert result.coincidence_rate == 1.0
+        assert result.threshold == max(ECHO_FLOOR, result.coincidence_rate)
+
+    def test_score_echo_gate_excludes_empty_draft(self):
+        """Records with empty draft_ko must be excluded from denominator."""
+        from evaluate_pipeline import score_echo_gate
+
+        hold_out = [
+            {"id": "c1", "ko_text": "ref1", "ko_flavor": ""},
+            {"id": "c2", "ko_text": "ref2", "ko_flavor": ""},
+        ]
+        field_records = [
+            {
+                "card_id": "c1",
+                "route": "rule",
+                "draft_ko": "",  # empty — excluded from denominator
+                "tm_hits": [{"id": "x", "ko_text": "TM1", "en_text": "...", "score": 0.5}],
+            },
+            {
+                "card_id": "c2",
+                "route": "rule",
+                "draft_ko": "다른 번역",
+                "tm_hits": [{"id": "y", "ko_text": "TM2", "en_text": "...", "score": 0.5}],
+            },
+        ]
+        result = score_echo_gate(field_records, hold_out)
+        assert result.denominator == 1  # c1 excluded (empty draft_ko)
+        assert result.echo_count == 0
+
+    def test_score_echo_gate_excludes_no_tm_hits(self):
+        """Records with no TM hits must be excluded from denominator."""
+        from evaluate_pipeline import score_echo_gate
+
+        hold_out = [{"id": "c1", "ko_text": "ref", "ko_flavor": ""}]
+        field_records = [{
+            "card_id": "c1",
+            "route": "rule",
+            "draft_ko": "번역",
+            "tm_hits": [],  # no hits
+        }]
+        result = score_echo_gate(field_records, hold_out)
+        assert result.denominator == 0
+
+    def test_echo_gate_result_in_evaluation_report(self, hold_out_cards, tmp_path):
+        """run_evaluation computes echo_gate_result when field_synthesis has field_records."""
+        import json as _json
+
+        pipeline_path = tmp_path / "pipeline.jsonl"
+        first_card = hold_out_cards[0]
+        with pipeline_path.open("w", encoding="utf-8") as f:
+            f.write(_json.dumps({
+                "_meta": "run_pipeline_header",
+                "run_mode": "real",
+                "tm_threshold_derivation": {},
+            }, ensure_ascii=False) + "\n")
+            f.write(_json.dumps({
+                "card_id": first_card["id"],
+                "route": "rule",
+                "draft_ko": "번역 결과",
+                "interrupted": False,
+                "tm_hits": [{"id": "x", "ko_text": "TM 번역", "en_text": "...", "score": 0.5}],
+                "injected_terms": [],
+                "tm_confidence": 0.5,
+                "glossary_llm_judged": True,
+            }, ensure_ascii=False) + "\n")
+        preds, _, _, _, synthesis, _ = _load_pipeline_output(pipeline_path, HOLD_OUT)
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            field_synthesis=synthesis,
+            tm_baseline_median=0.4,
+        )
+        assert report.echo_gate_result is not None
+        assert isinstance(report.echo_gate_result.passed, bool)
+        assert report.echo_gate_result.denominator >= 1
+
+    def test_echo_gate_printed_in_report(self, hold_out_cards, tmp_path, capsys):
+        """print_evaluation_report must include echo gate section."""
+        import json as _json
+
+        pipeline_path = tmp_path / "pipeline.jsonl"
+        first_card = hold_out_cards[0]
+        with pipeline_path.open("w", encoding="utf-8") as f:
+            f.write(_json.dumps({
+                "_meta": "run_pipeline_header",
+                "run_mode": "real",
+                "tm_threshold_derivation": {},
+            }, ensure_ascii=False) + "\n")
+            f.write(_json.dumps({
+                "card_id": first_card["id"],
+                "route": "rule",
+                "draft_ko": "번역 결과",
+                "interrupted": False,
+                "tm_hits": [{"id": "x", "ko_text": "TM 번역", "en_text": "...", "score": 0.5}],
+                "injected_terms": [],
+                "tm_confidence": 0.5,
+                "glossary_llm_judged": True,
+            }, ensure_ascii=False) + "\n")
+        preds, _, _, _, synthesis, _ = _load_pipeline_output(pipeline_path, HOLD_OUT)
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            field_synthesis=synthesis,
+            tm_baseline_median=0.4,
+        )
+        print_evaluation_report(report)
+        out = capsys.readouterr().out
+        assert "에코 게이트" in out or "Echo" in out
+        assert "ECHO_FLOOR" in out or "echo_floor" in out or "0.05" in out
+
+
+# ---------------------------------------------------------------------------
+# AC6: run_mode tracking tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunMode:
+    """run_mode is tracked from pipeline header and gates are blocked for stub runs."""
+
+    def test_load_pipeline_output_extracts_run_mode_real(self, tmp_path):
+        """_load_pipeline_output reads run_mode='real' from pipeline header."""
+        import json as _json
+
+        p = tmp_path / "p.jsonl"
+        p.write_text(
+            _json.dumps({"_meta": "run_pipeline_header", "run_mode": "real", "tm_threshold_derivation": {}}) + "\n"
+            + _json.dumps({"card_id": "x", "route": "rule", "draft_ko": "번역", "interrupted": False,
+                           "tm_hits": [], "injected_terms": [], "tm_confidence": 0.0}) + "\n",
+            encoding="utf-8",
+        )
+        _, _, _, _, synthesis, _ = _load_pipeline_output(p, HOLD_OUT)
+        assert synthesis.run_mode == "real"
+
+    def test_load_pipeline_output_extracts_run_mode_stub(self, tmp_path):
+        """_load_pipeline_output reads run_mode='stub' from pipeline header."""
+        import json as _json
+
+        p = tmp_path / "p.jsonl"
+        p.write_text(
+            _json.dumps({"_meta": "run_pipeline_header", "run_mode": "stub", "tm_threshold_derivation": {}}) + "\n"
+            + _json.dumps({"card_id": "x", "route": "rule", "draft_ko": "번역", "interrupted": False,
+                           "tm_hits": [], "injected_terms": [], "tm_confidence": 0.0}) + "\n",
+            encoding="utf-8",
+        )
+        _, _, _, _, synthesis, _ = _load_pipeline_output(p, HOLD_OUT)
+        assert synthesis.run_mode == "stub"
+
+    def test_load_pipeline_output_run_mode_unknown_when_absent(self, tmp_path):
+        """When header lacks run_mode, synthesis.run_mode defaults to 'unknown'."""
+        import json as _json
+
+        p = tmp_path / "p.jsonl"
+        p.write_text(
+            _json.dumps({"_meta": "run_pipeline_header", "tm_threshold_derivation": {}}) + "\n"
+            + _json.dumps({"card_id": "x", "route": "rule", "draft_ko": "번역", "interrupted": False,
+                           "tm_hits": [], "injected_terms": [], "tm_confidence": 0.0}) + "\n",
+            encoding="utf-8",
+        )
+        _, _, _, _, synthesis, _ = _load_pipeline_output(p, HOLD_OUT)
+        assert synthesis.run_mode == "unknown"
+
+    def test_report_run_mode_propagated_from_field_synthesis(self, hold_out_cards, tmp_path):
+        """run_evaluation propagates run_mode from field_synthesis when not explicitly passed."""
+        import json as _json
+
+        pipeline_path = tmp_path / "p.jsonl"
+        card = hold_out_cards[0]
+        with pipeline_path.open("w", encoding="utf-8") as f:
+            f.write(_json.dumps({
+                "_meta": "run_pipeline_header",
+                "run_mode": "real",
+                "tm_threshold_derivation": {},
+            }) + "\n")
+            f.write(_json.dumps({
+                "card_id": card["id"], "route": "rule", "draft_ko": "번역",
+                "interrupted": False, "tm_hits": [], "injected_terms": [],
+                "tm_confidence": 0.0, "glossary_llm_judged": True,
+            }) + "\n")
+        preds, _, _, _, synthesis, _ = _load_pipeline_output(pipeline_path, HOLD_OUT)
+        report = run_evaluation(HOLD_OUT, GLOSSARY, preds, skip_llm_judge=True, field_synthesis=synthesis)
+        assert report.run_mode == "real"
+
+    def test_stub_run_does_not_print_gate_verdicts(self, hold_out_cards, capsys):
+        """print_evaluation_report omits gate verdicts when run_mode='stub'."""
+        preds = [c["ko_text"] for c in hold_out_cards]
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+            run_mode="stub",
+        )
+        print_evaluation_report(report)
+        out = capsys.readouterr().out
+        assert "STUB" in out or "stub" in out.lower()
+        # Gate verdicts should not appear in stub output
+        assert "합격" not in out and "불합격" not in out
+
+    def test_run_pipeline_writes_run_mode_stub_to_header(self, tmp_path):
+        """run_pipeline with llm_model=None writes run_mode='stub' to header."""
+        import json as _json
+        from run_pipeline import run_pipeline
+
+        out = tmp_path / "out.jsonl"
+        run_pipeline(
+            data_dir=Path("data"),
+            assets_dir=Path("assets"),
+            n_cards=1,
+            output_path=out,
+            llm_model=None,
+        )
+        lines = out.read_text(encoding="utf-8").splitlines()
+        header = _json.loads(lines[0])
+        assert header.get("run_mode") == "stub"
+        assert header.get("_meta") == "run_pipeline_header"
+
+    def test_run_pipeline_writes_run_mode_field_records(self, tmp_path):
+        """run_pipeline writes run_mode into the header and model_id into each record."""
+        import json as _json
+        from run_pipeline import run_pipeline
+
+        out = tmp_path / "out.jsonl"
+        run_pipeline(
+            data_dir=Path("data"),
+            assets_dir=Path("assets"),
+            n_cards=1,
+            output_path=out,
+            llm_model=None,
+        )
+        lines = out.read_text(encoding="utf-8").splitlines()
+        records = [_json.loads(line) for line in lines if not _json.loads(line).get("_meta")]
+        for rec in records:
+            assert "model_id" in rec, f"record missing model_id: {rec}"
+            assert rec["model_id"] is None  # stub → None
+
+
+# ---------------------------------------------------------------------------
+# AC6: model_invocation_failure cause
+# ---------------------------------------------------------------------------
+
+
+class TestModelInvocationFailureCause:
+    """model_invocation_failure is a valid empty prediction cause (4th)."""
+
+    def test_all_causes_has_model_invocation_failure(self):
+        """ALL_CAUSES must include 'model_invocation_failure'."""
+        from field_card_synthesis import ALL_CAUSES
+        assert "model_invocation_failure" in ALL_CAUSES
+
+    def test_evaluation_report_has_model_invocation_failure_key(self, hold_out_cards):
+        """EvaluationReport.empty_by_cause must always have all 4 cause keys."""
+        from field_card_synthesis import ALL_CAUSES
+        preds = [""] * len(hold_out_cards)
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+        )
+        for cause in ALL_CAUSES:
+            assert cause in report.empty_by_cause, (
+                f"empty_by_cause missing '{cause}' key"
+            )
+
+    def test_print_report_includes_model_invocation_failure_label(self, hold_out_cards, capsys):
+        """print_evaluation_report must label model_invocation_failure in Korean."""
+        from field_card_synthesis import ALL_CAUSES
+        preds = [""] * len(hold_out_cards)
+        report = run_evaluation(
+            HOLD_OUT, GLOSSARY, preds,
+            skip_llm_judge=True,
+            tm_baseline_median=0.4,
+        )
+        print_evaluation_report(report)
+        out = capsys.readouterr().out
+        assert "model_invocation_failure" in out
+
+
+# ---------------------------------------------------------------------------
+# AC6: stub prevention — CLI requires --llm-model with --run-pipeline
+# ---------------------------------------------------------------------------
+
+
+class TestStubPrevention:
+    """The CLI must refuse --run-pipeline without --llm-model."""
+
+    def test_run_pipeline_mode_requires_llm_model(self, tmp_path, monkeypatch):
+        """main() must call parser.error when --run-pipeline is given without --llm-model."""
+        import sys as _sys
+
+        monkeypatch.chdir(tmp_path)
+        orig = _sys.argv[:]
+        _sys.argv = [
+            "evaluate_pipeline",
+            "--data-dir", str(HOLD_OUT.parent),
+            "--assets-dir", str(GLOSSARY.parent),
+            "--run-pipeline",
+            # No --llm-model intentionally
+            "--skip-llm-judge",
+        ]
+        try:
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code != 0  # parser.error exits non-zero
+        finally:
+            _sys.argv = orig
+
+    def test_run_pipeline_no_default_llm_model(self):
+        """run_pipeline() must NOT have a default for llm_model — forces explicit opt-in."""
+        import inspect
+        from run_pipeline import run_pipeline as _rp
+
+        sig = inspect.signature(_rp)
+        param = sig.parameters.get("llm_model")
+        assert param is not None, "run_pipeline must have llm_model parameter"
+        assert param.default is inspect.Parameter.empty, (
+            "llm_model must have no default — caller must explicitly pass None or a model ID"
+        )

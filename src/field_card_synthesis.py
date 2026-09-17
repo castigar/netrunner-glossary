@@ -14,6 +14,7 @@ Empty prediction causes (empty_prediction_cause ontology):
   tm_search_failure:              draft_ko="" and interrupted=False.
   guard_rejected_in_review_queue: draft_ko="" and interrupted=True.
   approval_incomplete:            field record entirely absent from pipeline output.
+  model_invocation_failure:       all Bedrock fallback models failed for this record.
 
 Card-level gate prediction (used by gate1/2/3 for scoring):
   - All fields compliant → text field draft_ko (or "" for flavor-only cards).
@@ -28,12 +29,14 @@ EmptyPredictionCause = Literal[
     "tm_search_failure",
     "guard_rejected_in_review_queue",
     "approval_incomplete",
+    "model_invocation_failure",
 ]
 
 ALL_CAUSES: tuple[EmptyPredictionCause, ...] = (
     "tm_search_failure",
     "guard_rejected_in_review_queue",
     "approval_incomplete",
+    "model_invocation_failure",
 )
 
 
@@ -70,6 +73,9 @@ class FieldSynthesisReport:
         total_count:      Total hold-out cards processed (== len(card_results)).
         empty_by_cause:   Count of empty field predictions by cause.
         card_predictions: Gate-scoring predictions aligned with hold-out order.
+        field_records:    Raw field-level records from pipeline_output.jsonl.
+                          Populated by _load_pipeline_output; used by echo gate.
+        run_mode:         "real" | "stub" | "unknown". Populated from pipeline header.
     """
 
     card_results: list[CardSynthesisResult] = dc_field(default_factory=list)
@@ -78,6 +84,8 @@ class FieldSynthesisReport:
     total_count: int = 0
     empty_by_cause: dict[str, int] = dc_field(default_factory=dict)
     card_predictions: list[str] = dc_field(default_factory=list)
+    field_records: list[dict] = dc_field(default_factory=list)
+    run_mode: str = "unknown"
 
 
 def synthesize_field_to_card(
@@ -156,11 +164,19 @@ def synthesize_field_to_card(
                 interrupted = rec.get("interrupted", False)
 
                 if not draft_ko:
-                    # Empty draft — classify by interruption status.
-                    cause = (
-                        "guard_rejected_in_review_queue" if interrupted
-                        else "tm_search_failure"
-                    )
+                    # An explicit cause recorded by the producer wins: the
+                    # runner knows why it left the prediction empty (AC8
+                    # auto-hold → approval_incomplete; exhausted fallback
+                    # chain → model_invocation_failure).  Only when the record
+                    # carries none do we infer it from interruption status.
+                    recorded_cause = rec.get("empty_cause")
+                    if recorded_cause in ALL_CAUSES:
+                        cause = recorded_cause  # type: ignore[assignment]
+                    else:
+                        cause = (
+                            "guard_rejected_in_review_queue" if interrupted
+                            else "tm_search_failure"
+                        )
                     violated_fields.append(field_name)
                     empty_causes.append((field_name, cause))
                     empty_by_cause[cause] += 1

@@ -299,6 +299,7 @@ def pipeline_records_with_glossary_flag(tmp_path_factory):
         assets_dir=ASSETS_DIR,
         n_cards=2,
         output_path=out,
+        llm_model=None,
     )
 
 
@@ -341,6 +342,7 @@ def test_pipeline_output_file_has_glossary_llm_judged(tmp_path):
         assets_dir=ASSETS_DIR,
         n_cards=1,
         output_path=out,
+        llm_model=None,
     )
     assert out.exists(), "Output file must be created"
     lines = out.read_text(encoding="utf-8").splitlines()
@@ -397,6 +399,7 @@ def test_pipeline_output_file_tm_hits_include_ko_text(tmp_path):
         assets_dir=ASSETS_DIR,
         n_cards=1,
         output_path=out,
+        llm_model=None,
     )
     lines = out.read_text(encoding="utf-8").splitlines()
     records_checked = 0

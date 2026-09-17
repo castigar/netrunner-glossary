@@ -475,3 +475,208 @@ def test_operational_mode_no_eval_autoresume_flag_in_records(tmp_path):
         assert rec.get("eval_autoresume") is not True, (
             f"record {rec.get('card_id')!r} has eval_autoresume=True in operational mode"
         )
+
+
+# ---------------------------------------------------------------------------
+# AC8: the auto-responder is a real approve/hold policy — deterministic and
+# reproducible, deciding from the interrupt payload alone.
+# ---------------------------------------------------------------------------
+
+
+def test_auto_respond_holds_on_blocking_new_term():
+    """A blocking new_term interrupt must be held, not rubber-stamped.
+
+    A machine cannot invent the Korean rendering of an unregistered proper noun,
+    so approving the draft as-is would launder an unresolved term into
+    approved.jsonl. Fails if auto_respond approves every interrupt.
+    """
+    from run_pipeline import auto_respond
+
+    payload = {
+        "card_id": "sure_gamble",
+        "text_type": "rule",
+        "source_text": "Trash Ice Wall.",
+        "draft_ko": "아이스 월을 폐기한다.",
+        "violations": [{"guard": "new_term", "detail": {"new_terms": ["Ice Wall"]}}],
+    }
+    assert auto_respond(payload) == "hold"
+
+
+def test_auto_respond_approves_non_blocking_triggers():
+    """low_tm_confidence / rule_violation / term_conflict are approved as-is.
+
+    Fails if auto_respond holds everything — the mirror of the auto_held_count
+    defect this AC had to fix.
+    """
+    from run_pipeline import auto_respond
+
+    for guard in ("low_tm_confidence", "rule_violation", "term_conflict", "injection"):
+        payload = {"card_id": "x", "violations": [{"guard": guard, "detail": {}}]}
+        assert auto_respond(payload) == "approved", f"{guard} should be approved"
+
+
+def test_auto_respond_holds_when_any_violation_is_blocking():
+    """Mixed violations: one blocking trigger is enough to hold."""
+    from run_pipeline import auto_respond
+
+    payload = {
+        "card_id": "x",
+        "violations": [
+            {"guard": "low_tm_confidence", "detail": {}},
+            {"guard": "new_term", "detail": {"new_terms": ["Ice Wall"]}},
+        ],
+    }
+    assert auto_respond(payload) == "hold"
+
+
+def test_auto_respond_ignores_draft_and_source_text():
+    """The decision depends only on violations — not on the text under review.
+
+    This pins the leakage ban structurally: if the policy ever started keying off
+    draft_ko or source_text (the route by which reference text could enter), two
+    payloads with identical violations but different text would diverge.
+    """
+    from run_pipeline import auto_respond
+
+    violations = [{"guard": "low_tm_confidence", "detail": {}}]
+    a = {
+        "card_id": "a",
+        "source_text": "Gain 9 credits.",
+        "draft_ko": "9 크레딧을 얻는다.",
+        "violations": violations,
+    }
+    b = {"card_id": "b", "source_text": "End the run.", "draft_ko": "", "violations": violations}
+    assert auto_respond(a) == auto_respond(b) == "approved"
+
+
+def test_auto_respond_is_reproducible_across_calls():
+    """Same payload, same decision, every time — no carried state."""
+    from run_pipeline import auto_respond
+
+    payloads = [
+        {"violations": [{"guard": "new_term", "detail": {"new_terms": ["X"]}}]},
+        {"violations": [{"guard": "low_tm_confidence", "detail": {}}]},
+        {"violations": []},
+    ]
+    first = [auto_respond(p) for p in payloads]
+    # Call them in the opposite order to expose any hidden state, then re-align.
+    second = [auto_respond(p) for p in reversed(payloads)][::-1]
+    assert first == second
+    assert first == ["hold", "approved", "approved"]
+
+
+def test_eval_autoresume_counts_partition_the_triggers(tmp_path):
+    """auto_approved + auto_held must exactly account for every trigger.
+
+    Fails if a trigger is counted but neither resolved nor held — the defect the
+    always-approve responder hid by leaving auto_held_count permanently 0.
+    """
+    out = tmp_path / "output.jsonl"
+    run_pipeline(
+        data_dir=Path("data"),
+        assets_dir=Path("assets"),
+        n_cards=8,
+        output_path=out,
+        llm_model=None,
+        eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
+    )
+    _, eval_header, records = _parse_jsonl_output(out)
+    stats = eval_header["hitl_stats"]
+    assert stats["auto_approved_count"] + stats["auto_held_count"] == stats["trigger_count"]
+
+    held_records = [r for r in records if r.get("auto_held") is True]
+    assert len(held_records) == stats["auto_held_count"]
+
+
+def test_auto_held_records_have_empty_prediction_not_reference_text(tmp_path):
+    """Held fields yield an empty prediction tagged approval_incomplete.
+
+    A held field must never carry its draft forward as if it had been reviewed,
+    and must never be backfilled with hold-out ko_text.
+    """
+    hold_out = json.loads((Path("data") / "hold_out.json").read_text(encoding="utf-8"))
+    ref_by_card = {c["id"]: c for c in hold_out}
+
+    out = tmp_path / "output.jsonl"
+    run_pipeline(
+        data_dir=Path("data"),
+        assets_dir=Path("assets"),
+        n_cards=8,
+        output_path=out,
+        llm_model=None,
+        eval_autoresume=True,
+        approved_store_path=tmp_path / "approved.jsonl",
+        new_term_candidates_path=tmp_path / "new_term_candidates.json",
+    )
+    _, _, records = _parse_jsonl_output(out)
+    held = [r for r in records if r.get("auto_held") is True]
+    assert held, "expected at least one auto-held field in the first 8 hold-out cards"
+    for rec in held:
+        assert rec["draft_ko"] == "", f"held record {rec['card_id']} kept a draft"
+        assert rec.get("empty_cause") == "approval_incomplete"
+        assert rec.get("hold_reasons"), "held record must record which trigger held it"
+        # Leakage ban: nothing from the reference card was copied in.
+        ref = ref_by_card.get(rec["card_id"], {})
+        for key in ("ko_text", "ko_flavor"):
+            assert rec["draft_ko"] != (ref.get(key) or "___absent___")
+
+
+def test_eval_autoresume_run_is_reproducible_end_to_end(tmp_path):
+    """Two identical eval_autoresume runs must produce identical HITL stats.
+
+    AC8 requires the approve/hold policy be reproducible, not merely defined.
+    Fails if the responder consults anything run-scoped (ordering, randomness,
+    accumulated store state).
+    """
+    def _run(tag: str) -> tuple[dict, list[str]]:
+        d = tmp_path / tag
+        d.mkdir()
+        out = d / "output.jsonl"
+        run_pipeline(
+            data_dir=Path("data"),
+            assets_dir=Path("assets"),
+            n_cards=6,
+            output_path=out,
+            llm_model=None,
+            eval_autoresume=True,
+            approved_store_path=d / "approved.jsonl",
+            new_term_candidates_path=d / "new_term_candidates.json",
+        )
+        _, header, records = _parse_jsonl_output(out)
+        decisions = [
+            f"{r.get('card_id')}:{r.get('field')}:{r.get('auto_approved')}:{r.get('auto_held')}"
+            for r in records
+        ]
+        return header["hitl_stats"], decisions
+
+    stats_a, decisions_a = _run("run_a")
+    stats_b, decisions_b = _run("run_b")
+    assert stats_a == stats_b, f"HITL stats differ between runs: {stats_a} vs {stats_b}"
+    assert decisions_a == decisions_b, "per-field approve/hold decisions differ between runs"
+
+
+def test_synthesis_reports_approval_incomplete_for_held_fields():
+    """A held field must be reported as approval_incomplete, not misfiled.
+
+    field_card_synthesis previously inferred the cause from `interrupted` alone,
+    which files every auto-held field under guard_rejected_in_review_queue.
+    """
+    from field_card_synthesis import synthesize_card_predictions
+
+    hold_out = json.loads((Path("data") / "hold_out.json").read_text(encoding="utf-8"))
+    card = hold_out[0]
+    field_name = "text" if (card.get("en_text") or "").strip() else "flavor"
+    records = [{
+        "card_id": card["id"],
+        "field": field_name,
+        "route": "rule" if field_name == "text" else "flavor",
+        "draft_ko": "",
+        "interrupted": True,
+        "empty_cause": "approval_incomplete",
+        "auto_held": True,
+    }]
+    result = synthesize_card_predictions(records, [card])
+    assert result.empty_by_cause["approval_incomplete"] == 1
+    assert result.empty_by_cause["guard_rejected_in_review_queue"] == 0

@@ -1,27 +1,201 @@
 {
   "schema_version": 1,
   "scope": "rule_text",
-  "labeler": "",
-  "labeled_at": "",
+  "labeler": "jonghyun.lee",
+  "labeled_at": "2026-09-17",
   "corpus": "netrunner-cards-json v2 · clean corpus 980장 (2012-2016)",
   "entries": [
     {
       "en": "trash",
       "ko": ["폐기"],
-      "source": "example",
-      "note": "형식 예시다. 라벨링을 시작할 때 이 항목 3개를 지우고 쓴다."
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "subroutine",
+      "ko": ["서브루틴"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "barrier",
+      "ko": ["방벽"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "code gate",
+      "ko": ["코드게이트"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "AP",
+      "ko": ["AP"],
+      "source": "unaided",
+      "note": "경계 사례. 부제(en_keywords) 34장 · 룰 텍스트 1장. killer와 같은 성격으로 남긴다."
+    },
+    {
+      "en": "install",
+      "ko": ["설치"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "rez",
+      "ko": ["레즈"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "derez",
+      "ko": ["디레즈"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "operation",
+      "ko": ["운영"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "resource",
+      "ko": ["리소스"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "upgrade",
+      "ko": ["개선"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "identity",
+      "ko": ["ID"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "agenda",
+      "ko": ["아젠다"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "asset",
+      "ko": ["자산"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "hardware",
+      "ko": ["하드웨어"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "ice",
+      "ko": ["아이스"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "heap",
+      "ko": ["힙"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "grip",
+      "ko": ["그립"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "run",
+      "ko": ["런"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "link",
+      "ko": ["링크"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "console",
+      "ko": ["콘솔"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "icebreaker",
+      "ko": ["아이스브레이커"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "killer",
+      "ko": ["킬러"],
+      "source": "unaided",
+      "note": "경계 사례. 부제(en_keywords) 15장 · 룰 텍스트 1장으로 주 용도는 부제지만, 룰 텍스트에도 등장하므로 §1 \"판단이 갈리면 적는 쪽\"에 따라 남긴다. 부제 경로(subtype_extractor) 용어와 겹치는 점을 감안해 채점 결과를 볼 것."
+    },
+    {
+      "en": "AI",
+      "ko": ["AI"],
+      "source": "unaided",
+      "note": ""
     },
     {
       "en": "end the run",
-      "ko": ["런을 종료한다", "런 종료"],
-      "source": "example",
-      "note": "역어가 둘 이상 정당하면 모두 적는다. 채점은 하나라도 맞으면 정답으로 센다."
+      "ko": ["런을 종료한다"],
+      "source": "unaided",
+      "note": ""
     },
     {
       "en": "R&D",
       "ko": ["연구개발부"],
-      "source": "example",
-      "note": "추출기가 못 잡을 것을 알면서도 적는다. 그게 측정하려는 것이다. (§3 참조)"
+      "source": "unaided",
+      "note": "추출기가 못 잡을 것을 알면서도 적는다. 그게 측정하려는 것이다. (§4 참조)"
+    },
+    {
+      "en": "Archives",
+      "ko": ["기록보관소"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "HQ",
+      "ko": ["본부"],
+      "source": "unaided",
+      "note": ""
+    },
+    {
+      "en": "turn",
+      "ko": ["차례"],
+      "source": "aided",
+      "note": ""
+    },
+    {
+      "en": "credit",
+      "ko": ["크레딧"],
+      "source": "aided",
+      "note": ""
+    },
+    {
+      "en": "gain",
+      "ko": ["얻다","얻는다"],
+      "source": "aided",
+      "note": "획득하다 대신 FFG 판본에 맞춰 이쪽으로 통일하는 걸로"
+    },
+    {
+      "en": "hosted",
+      "ko": ["호스트된"],
+      "source": "aided",
+      "note": ""
     }
   ]
 }

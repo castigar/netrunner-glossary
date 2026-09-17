@@ -81,7 +81,10 @@ class _FallbackLLM:
             m for m in FALLBACK_MODELS if m != primary_model_id
         ]
         self.last_model_id: str = primary_model_id
+        # Failures only — a per-invocation success entry would make the header
+        # grow with the corpus and say nothing the success counts do not.
         self.model_attempts_log: list[dict] = []
+        self.success_counts: dict[str, int] = {}
         self.models_used: set[str] = set()
 
     def invoke(self, prompt: str) -> Any:
@@ -95,9 +98,7 @@ class _FallbackLLM:
                     response = ChatBedrockConverse(model=model_id).invoke(prompt)
                     self.last_model_id = model_id
                     self.models_used.add(model_id)
-                    self.model_attempts_log.append(
-                        {"model_id": model_id, "attempt": attempt, "success": True}
-                    )
+                    self.success_counts[model_id] = self.success_counts.get(model_id, 0) + 1
                     return response
                 except Exception as exc:
                     err_str = str(exc)
@@ -594,7 +595,8 @@ def run_pipeline(
     }
     if isinstance(llm, _FallbackLLM):
         metadata["models_used"] = sorted(llm.models_used)
-        metadata["model_attempts_log"] = llm.model_attempts_log
+        metadata["model_success_counts"] = dict(llm.success_counts)
+        metadata["model_attempts_log"] = llm.model_attempts_log  # failures only
         mixed = len(llm.models_used) > 1
         metadata["mixed_run"] = mixed
         if mixed:

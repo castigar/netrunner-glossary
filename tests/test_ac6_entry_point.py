@@ -634,6 +634,9 @@ class TestCLIEntryPoint:
             "--assets-dir", str(GLOSSARY.parent),
             "--pipeline-output", str(PIPELINE_OUTPUT),
             "--skip-llm-judge",
+            # stub_prevention: a file without run_mode=real is only inspectable
+            # behind this explicit flag, and still yields no gate verdict.
+            "--allow-stub-output",
         ]
         try:
             main()

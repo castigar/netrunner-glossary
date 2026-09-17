@@ -382,7 +382,7 @@ class EvaluationReport:
         """
         if not self.gates_are_reportable:
             return None
-        if not self.verdict.passed:
+        if not self.verdict.overall_passed:
             return False
         if self.echo_gate_result is not None and not self.echo_gate_result.passed:
             return False
@@ -792,12 +792,13 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         print("  tm_only_baseline: 미측정 (게이트 3 임계 유도 없음)")
     print()
 
-    if report.run_mode != "stub":
-        print(format_verdict(report.verdict))
+    # (f) Gate1Result.llm_judged — an unjudged_glossary_disclosure_site, so it is
+    # printed for every run mode, not only for runs that get a gate verdict.
+    llm_judged = report.verdict.gate1.llm_judged
+    llm_judged_label = "완료" if llm_judged else "미완료 (추출 용어 미판정)"
 
-        # (f) Gate1Result.llm_judged
-        llm_judged = report.verdict.gate1.llm_judged
-        llm_judged_label = "완료" if llm_judged else "미완료 (추출 용어 미판정)"
+    if report.gates_are_reportable:
+        print(format_verdict(report.verdict))
         print(f"  용어집 LLM 판정 상태: {llm_judged_label}")
 
         # (d) Gate threshold sources
@@ -811,7 +812,7 @@ def print_evaluation_report(report: EvaluationReport) -> None:
             threshold = gate2_symbol_preservation.THRESHOLD
             if actual_rate < threshold:
                 print(
-                    f"  ※ 게이트 2 구조적 불합격: 참조 코퍼스 실측 {actual_rate:.1%}"
+                    f"  ※ 게이트 2 미달: pipeline_predictions 실측 {actual_rate:.1%}"
                     f" < 임계 {threshold:.0%} — 모든 출력에 대해 미달이 예상됩니다."
                 )
 
@@ -834,7 +835,11 @@ def print_evaluation_report(report: EvaluationReport) -> None:
                 " (TM 베이스라인 미측정)"
             )
     else:
-        print("  [게이트 판정·임계 출처 생략 — stub 실행]")
+        print(
+            f"  [게이트 판정·임계 출처 생략 — run_mode={report.run_mode}."
+            " 실제 Bedrock 모델 실행(real)에서만 판정합니다.]"
+        )
+        print(f"  용어집 LLM 판정 상태: {llm_judged_label}")
 
     # (e) Interrupt-pending count/ratio
     print()
@@ -881,7 +886,7 @@ def print_evaluation_report(report: EvaluationReport) -> None:
         )
     else:
         print("  2단 카드별: 필드 레코드 없음 (평탄 예측 계열 — 카드 1장 = 예측 1개)")
-    if report.run_mode != "stub":
+    if report.gates_are_reportable:
         print(
             f"  3단 게이트별 비율/합격: 게이트1 {report.verdict.gate1.compliance_rate:.1%}"
             f" / 게이트2 {report.verdict.gate2.preservation_rate:.1%}"
@@ -898,7 +903,11 @@ def print_evaluation_report(report: EvaluationReport) -> None:
     if eg is None:
         print("  에코 게이트: 필드 레코드 없음 — pipeline_output.jsonl 로드 시에만 측정됩니다.")
     else:
-        status = "통과" if eg.passed else "미달"
+        status = (
+            ("통과" if eg.passed else "미달")
+            if report.gates_are_reportable
+            else f"판정 보류 (run_mode={report.run_mode})"
+        )
         print(f"  결과: {status}")
         print(f"  실측 에코율: {eg.echo_count}/{eg.denominator} = {eg.actual_echo_rate:.3f}")
         print(f"  정당한 우연일치율 (TM top-1 == 참조 KO): {eg.coincidence_count}/{eg.denominator} = {eg.coincidence_rate:.3f}")

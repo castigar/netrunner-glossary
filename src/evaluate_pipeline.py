@@ -1,9 +1,18 @@
 """evaluate_pipeline.py — Entry point for AC6: evaluate pipeline outputs.
 
 Passes pipeline-generated draft records through all three hard gates and
-observation metrics for the 100-card hold-out set, then reports verdict.
+observation metrics for the hold-out set, then reports verdict.
 
-Scoring population: data/hold_out.json (all 100 cards, deterministic order).
+Scoring population: the **delivered** subset of data/hold_out.json — cards whose
+prediction is non-empty (SERVICE.md §5, 2026-09-18).  Withheld cards leave the
+gate denominators and are reported as throughput instead; counting a missing
+translation as "every term violated" measures processing rate, not translation
+quality.  The hold-out size is derived from the file, never assumed.
+
+Every hard gate measures its reference ceiling first (:mod:`gate_ceiling`): when
+the official KO translation cannot clear a gate's own threshold, that gate
+reports UNREACHABLE and does not reject the delivery.
+
 Scored artifact stage: pre-approval drafts.  Interrupt-pending count/ratio are
 reported separately and the entry point exits without waiting for human approval.
 
@@ -405,6 +414,12 @@ class EvaluationReport:
             return None
         if self.ceiling_verdicts:
             if any(v.blocks_delivery for v in self.ceiling_verdicts):
+                return False
+            # 천장 검사는 게이트 1·2만 덮는다. 게이트 3은 정답을 정답과 비교하면
+            # 거리가 구조상 0이라 천장이 언제나 통과해 장식이 되므로 거기서 뺐고,
+            # 그래서 여기서 따로 봐야 한다. 이 줄이 없으면 천장 검사가 붙는 순간
+            # 게이트 3이 최종 판정에서 통째로 빠진다.
+            if not self.verdict.gate3.passed:
                 return False
         elif not self.verdict.overall_passed:
             return False

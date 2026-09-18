@@ -152,6 +152,33 @@ class TestUnreachableDoesNotRejectDelivery:
         ref = gate1_term_compliance.score_reference(HOLD_OUT, GLOSSARY)
         assert ref.compliance_rate < gate1_term_compliance.THRESHOLD
 
+    def test_gate3_still_blocks_when_ceiling_checks_are_present(self, hold_out_cards):
+        """천장 검사가 붙어도 게이트 3은 최종 판정에 남아 있어야 한다.
+
+        게이트 3은 천장 검사 대상이 아니다(정답 대 정답은 거리 0이라 장식이 된다).
+        그래서 final_passed 가 ceiling_verdicts 만 보고 분기하면 게이트 3이 통째로
+        빠진다 — 실제로 그렇게 짰다가 이 테스트를 붙이며 고쳤다.
+        """
+        from evaluate_pipeline import EvaluationReport
+
+        # 게이트 1·2 는 계측 무효(납품을 막지 않는다), 게이트 3 은 불합격.
+        preds = [c["ko_text"] for c in hold_out_cards]
+        report = run_evaluation(HOLD_OUT, GLOSSARY, preds, skip_llm_judge=True)
+        assert report.ceiling_verdicts, "천장 검사가 실행되지 않아 전제가 성립하지 않는다"
+        assert not any(v.blocks_delivery for v in report.ceiling_verdicts), (
+            "이 전제에서는 천장 검사가 납품을 막지 않아야 한다"
+        )
+
+        object.__setattr__(report.verdict.gate3, "passed", False)
+        report.run_mode = "real"
+        assert report.final_passed is False, (
+            "게이트 3 불합격이 최종 판정에 반영되지 않았다 — 천장 검사가 붙으면서 "
+            "게이트 3 검사가 분기에서 빠졌다"
+        )
+
+        object.__setattr__(report.verdict.gate3, "passed", True)
+        assert report.final_passed is True
+
     def test_unreachable_gate_is_not_counted_as_failure(self, hold_out_cards):
         preds = [c["ko_text"] for c in hold_out_cards]
         report = run_evaluation(HOLD_OUT, GLOSSARY, preds, skip_llm_judge=True)

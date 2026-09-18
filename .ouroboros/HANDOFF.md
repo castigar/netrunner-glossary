@@ -8,7 +8,9 @@
 ## 0. 30초 요약
 
 - 기획 완료. 1·2단계 구현 완료. 파이프라인이 **처음으로 실제 모델로 전량 실행됐다.**
-- 최신 코드는 `ooo/ralph-3436c74545374d8296a877f5d4589e` @ **`f160d4a`**(`d100840` → `12c355a` → `e6ac521` → `f160d4a`). 마지막 실측 테스트 수는 `12c355a`에서 **952개 통과**이고 `d100840`에서는 939개였다. `f160d4a`는 문서 커밋이라 952에서 바뀌지 않았을 것으로 보이나 **재실측하지 않았다.**
+- **구현 브랜치를 `main`으로 머지했다**(`c857fc9`, 2026-09-18 푸시). **이제 최신 코드는 `main`에 있다** — `ooo/ralph-3436c74…` @ `f160d4a`가 88파일 그대로 들어왔고 충돌은 없었다(사전 정리는 §6).
+- 머지된 `main`에서 **테스트 953개 통과**(실측, 141초). 브랜치 시절 수치는 `12c355a` 952, `d100840` 939였다.
+- `README.md`가 생겼다 — **번역가(최종 사용자) 관점의 진입점 문서**다. 지금 번역가가 실제로 쓸 수 있는 것은 MCP 도구 4개뿐이고 검토 큐·REST API·Issue 확정 절차는 미구현이라는 사실을 앞에 세웠다.
 - ⚠️ **검증 워크트리 `~/.ouroboros/worktrees/verify-gen5`가 그 브랜치를 점유하고 있다**(detached 아님 — `git worktree list`가 `f160d4a [ooo/ralph-3436c74…]`로 표시). Ralph는 브랜치가 다른 워크트리에 잡혀 있으면 시작하지 못한다(§5 체크리스트). 착수 전 그 워크트리에서 `git checkout --detach` + `git worktree prune`을 해야 한다.
 - 브랜치는 origin과 동기화돼 있다(2026-09-18 푸시). **미푸시 커밋은 없다.**
 - **이번 세션의 발견: 공식 KO 정답 번역이 하드 게이트 1·2를 통과하지 못한다**(천장 74.69% / 95.00%). 도달 불가능한 기준을 향해 7세대를 태우고 있었다. 이 발견을 반영해 **SERVICE.md §5를 개정했다**(`24a2ba4`).
@@ -20,7 +22,7 @@
 | 항목 | 값 |
 |---|---|
 | 코드 repo | `castigar/netrunner-glossary` (public — `.env`·토큰을 절대 커밋하지 않는다) |
-| 로컬 main | `C:\Users\SDS\Desktop\sds-ax-practice\mini_pjt` |
+| 로컬 main | `C:\Users\SDS\Desktop\sds-ax-practice\mini_pjt` — **머지 후 구현 코드가 여기 있다**(`src/` 32 · `tests/` 35 · `assets/` · `README.md`) |
 | 검증 워크트리 | `C:\Users\SDS\.ouroboros\worktrees\verify-gen5` — **`ooo/ralph-3436c74…` 브랜치를 점유 중** @ `f160d4a` (detached 아님. Ralph 착수 전 해제 필요) |
 | 코퍼스 | `C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json` (`CORPUS_ROOT`) |
 | 파이썬 | `C:\Users\SDS\Desktop\sds-ax-practice\.venv\Scripts\python.exe` — 시스템 python 3.14에는 pytest가 없다 |
@@ -32,7 +34,7 @@
 
 ```bash
 export CORPUS_ROOT="C:/Users/SDS/Desktop/netrunner-corpus/netrunner-cards-json"
-cd "C:/Users/SDS/.ouroboros/worktrees/verify-gen5"
+cd "C:/Users/SDS/Desktop/sds-ax-practice/mini_pjt"
 "C:/Users/SDS/Desktop/sds-ax-practice/.venv/Scripts/python.exe" -m pytest -q
 ```
 
@@ -51,8 +53,8 @@ python src/run_pipeline.py --cards 10 --output out.jsonl \
 
 | 브랜치 | HEAD | origin | 내용 |
 |---|---|---|---|
-| **`ooo/ralph-3436c74…`** | **`f160d4a`** | ○ | **최신. 여기서 작업한다.** Gen 5 산출 10커밋(`d100840`) + 사람의 계측기 수정 3커밋(`12c355a`·`e6ac521`·`f160d4a`). `12c355a`에서 테스트 952 |
-| `main` | — | ○ | 기획 문서·Seed·골든 셋·이 문서 |
+| **`main`** | **`c857fc9`** | ○ | **최신. 여기서 작업한다.** 기획 문서·Seed·골든 셋·이 문서 + 머지된 구현 본체와 `README.md`. 테스트 **953** |
+| `ooo/ralph-3436c74…` | `f160d4a` | ○ | **`main`에 머지 완료**(`c857fc9`). Gen 5 산출 10커밋(`d100840`) + 사람의 계측기 수정 3커밋(`12c355a`·`e6ac521`·`f160d4a`) |
 | `ooo/ralph-c7ac3366…` | `31d3995` | ○ | Gen 4 결과. Gen 5의 기반 |
 | `ooo/ralph-6ec830bd…` | `1230fad` | ○ | Gen 3 결과 |
 | `ooo/orch_a6bc6099bdae` | `143f1cd` | ○ | phase2a Seed 교정본 보관 |
@@ -555,6 +557,12 @@ uvx --python ">=3.12" --from "ouroboros-ai[tui]" ouroboros tui monitor --db-path
 굴러다녔고, 그게 브랜치를 오갈 때마다 "untracked working tree file would be overwritten"
 충돌을 일으켰다. 두 판본은 전체가 다르다(`diff`가 `1,137c1,147`). 교정본을 추적 상태로
 올려 그 충돌 부류를 없앴다. 옛 판본은 어디서도 읽지 않으므로 보존하지 않았다.
+
+머지 때 충돌한 파일이 하나 더 있었다 — `data/README-rule-gold.md`도 양쪽이 각자 추가해
+공통 조상이 없는 add/add였다. 브랜치 판본이 `main` 판본을 교정한 후속판이라(`R&D`는 닿지
+않는 항목이 아니라 `r d` 형태로 후보에 올라 정상 채점되고, 채점기는 `src/rule_gold_eval.py`
+이며 KO까지 본다) 브랜치 판본을 `0a47103`으로 `main`에 선반영해 충돌을 없앤 뒤 머지했다.
+`main`에만 있던 사실은 없다.
 
 ## 7. 아직 안 정한 것
 

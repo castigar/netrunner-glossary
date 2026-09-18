@@ -135,6 +135,7 @@ def _check_card(card_id: str, en_text: str, ko_text: str) -> CardSymbolResult:
 def score_hold_out(
     hold_out_path: str | Path,
     predictions: list[str] | None = None,
+    cards: list[dict] | None = None,
 ) -> Gate2Result:
     """Score Hard Gate 2 over the hold-out set.
 
@@ -155,7 +156,8 @@ def score_hold_out(
         ValueError: if *predictions* is given and its length differs from the
             hold-out length, the same guard gate 3 applies.
     """
-    cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
+    if cards is None:
+        cards = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
     if predictions is not None and len(predictions) != len(cards):
         raise ValueError(

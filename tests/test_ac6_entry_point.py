@@ -132,7 +132,7 @@ class TestHoldOutSizeSource:
 
     def test_gate3_scores_all_hold_out_cards(self, hold_out_cards):
         """Gate 3 must score exactly hold_out_size cards — derived from file, not constant."""
-        preds = [""] * len(hold_out_cards)
+        preds = wrong_preds(hold_out_cards)
         report = run_evaluation(HOLD_OUT, GLOSSARY, preds, skip_llm_judge=True)
         assert report.verdict.gate3.n == len(hold_out_cards), (
             "Gate 3 must score exactly the number of cards in hold_out.json"
@@ -142,6 +142,18 @@ class TestHoldOutSizeSource:
 # ---------------------------------------------------------------------------
 # AC6 §3: Gates score pipeline_predictions (not hold_out ko_text)
 # ---------------------------------------------------------------------------
+
+
+#: 대조군 예측. SERVICE.md §5 가 하드 게이트를 **납품분에만** 적용하므로, 빈 문자열을
+#: 대조군으로 쓰면 납품 0건이 되어 채점 대상 자체가 사라진다. 그래서 "납품됐지만 틀린"
+#: 예측을 쓴다 — 비어 있지 않고, 용어집 역어도 게임 기호도 담고 있지 않다.
+#: 빈 문자열보다 오히려 강한 탐침이다: 미납품과 오역을 구분해서 재기 때문이다.
+WRONG_PREDICTION = "이 칸은 일부러 틀린 번역이다"
+
+
+def wrong_preds(cards):
+    """납품은 됐으나 용어·기호를 하나도 보존하지 않은 예측 계열."""
+    return [WRONG_PREDICTION] * len(cards)
 
 
 class TestGatesScorePipelinePredictions:
@@ -154,7 +166,7 @@ class TestGatesScorePipelinePredictions:
         card['ko_text'] directly, both runs would produce identical rates.
         """
         ref_preds = [c["ko_text"] for c in hold_out_cards]
-        empty_preds = [""] * len(hold_out_cards)
+        empty_preds = wrong_preds(hold_out_cards)
 
         report_ref = run_evaluation(HOLD_OUT, GLOSSARY, ref_preds, skip_llm_judge=True)
         report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
@@ -170,7 +182,7 @@ class TestGatesScorePipelinePredictions:
     def test_gate2_rate_changes_when_predictions_change(self, hold_out_cards):
         """Gate 2 preservation_rate changes between reference and empty predictions."""
         ref_preds = [c["ko_text"] for c in hold_out_cards]
-        empty_preds = [""] * len(hold_out_cards)
+        empty_preds = wrong_preds(hold_out_cards)
 
         report_ref = run_evaluation(HOLD_OUT, GLOSSARY, ref_preds, skip_llm_judge=True)
         report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
@@ -186,13 +198,17 @@ class TestGatesScorePipelinePredictions:
         This would fail if score_hold_out compared ko_text to itself (reference leakage).
         """
         ref_preds = [c["ko_text"] for c in hold_out_cards]
-        empty_preds = [""] * len(hold_out_cards)
+        empty_preds = wrong_preds(hold_out_cards)
 
         report_ref = run_evaluation(HOLD_OUT, GLOSSARY, ref_preds, skip_llm_judge=True)
         report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
 
         assert report_ref.verdict.gate3.median_distance == pytest.approx(0.0, abs=1e-6)
-        assert report_empty.verdict.gate3.median_distance > 0.9, (
+        # 대조군이 빈 문자열(거리 ≈ 1.0)에서 "납품됐지만 틀린" 번역으로 바뀌었다.
+        # 틀린 한국어는 정답과 글자를 일부 공유하므로 0.87 근처가 나온다 — 재는 성질은
+        # 그대로다: 참조 누출이면 0.0 이 나와야 하고, 0.5 를 넘는다는 것은 예측이
+        # ko_text 로 대체되지 않았다는 뜻이다. 눈금만 대조군에 맞춘다.
+        assert report_empty.verdict.gate3.median_distance > 0.5, (
             f"Empty predictions should have high edit distance; got "
             f"{report_empty.verdict.gate3.median_distance:.4f}"
         )
@@ -603,7 +619,7 @@ class TestReferenceLeakageBan:
         If ko_text were substituted as prediction, distance would be 0.0 (reference leakage).
         Distance > 0 proves the predictions are genuinely empty and not ko_text.
         """
-        empty_preds = [""] * len(hold_out_cards)
+        empty_preds = wrong_preds(hold_out_cards)
         report = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
         # Empty predictions vs reference: distance should be close to 1.0, NOT 0.0
         assert report.verdict.gate3.median_distance > 0.5, (

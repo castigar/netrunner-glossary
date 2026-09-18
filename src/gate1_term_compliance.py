@@ -19,6 +19,7 @@ and denominator (they neither help nor hurt the rate).
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -50,10 +51,39 @@ class Gate1Result:
     threshold: float = THRESHOLD
 
 
+#: 한글 음절 범위. "KO 역어"에 한글이 하나도 없으면 역어가 아니다.
+_HANGUL = re.compile(r"[가-힣]")
+
+
+def scoring_view(glossary: GlossaryFlat) -> GlossaryFlat:
+    """채점용 용어집 뷰 — KO 역어에 한글이 없는 항목을 뺀다.
+
+    ``glossary.json``은 세 역할을 겸한다: 초벌 프롬프트의 주입원, new_term_guard 의
+    차단 트리거원, 그리고 이 게이트의 정답지. 한 노브로 셋을 동시에 만족시킬 수 없어서
+    **채점에서만** 걸러 낸다.
+
+    걸러지는 것은 공식 subtype 파일의 미번역 값이 룰 텍스트 채점에 흘러든 항목이다 —
+    ``corp -> 'Corporation'``, ``ambush -> 'Ambush'``, ``nbn -> 'NBN'`` 등 15건.
+    "기업"이라고 옳게 옮긴 번역이 등재값이 영어라는 이유로 위반 처리되므로, 좋은
+    한국어일수록 점수가 내려가는 역방향 압력이 생긴다.
+
+    **자산에서 지우지 않는 이유**가 있다. 지우면 그 단어가 미등재가 되어
+    new_term_guard 의 차단형 정의(룰 텍스트의 비문장초 대문자 미등재 토큰)에 걸린다 —
+    ``The Corp guesses``의 ``Corp``가 정확히 그 형태다. 채점을 고치려다 HITL 보류율을
+    올리게 된다. 주입과 가드는 전체 용어집을 그대로 쓴다.
+    """
+    return {
+        en: (ko, source)
+        for en, (ko, source) in glossary.items()
+        if _HANGUL.search(ko)
+    }
+
+
 def score_hold_out(
     hold_out_path: str | Path,
     glossary_path: str | Path,
     predictions: list[str] | None = None,
+    cards: list[dict] | None = None,
 ) -> Gate1Result:
     """Score Hard Gate 1 over the hold-out set.
 
@@ -63,12 +93,20 @@ def score_hold_out(
         predictions: Optional KO predictions, one per card in hold_out order.
             When provided, each prediction is scored instead of card['ko_text'].
             Enables pipeline output scoring (gate_input_contract AC6).
+        cards: Optional pre-filtered card list used instead of reading
+            *hold_out_path*.  SERVICE.md §5 scores hard gates on the delivered
+            population only, so the caller hands in the delivered subset and the
+            matching predictions.  Scoring an undelivered card counts a missing
+            translation as "every term violated", which measures throughput, not
+            translation quality.
 
     Returns:
         :class:`Gate1Result` with ``passed=True`` iff compliance_rate >= 0.95.
     """
     glossary, llm_judged = load_flat_glossary(glossary_path)
-    cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
+    glossary = scoring_view(glossary)
+    if cards is None:
+        cards = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
     if predictions is not None and len(predictions) != len(cards):
         raise ValueError(
@@ -115,6 +153,24 @@ def score_hold_out(
         card_results=card_results,
         threshold=THRESHOLD,
     )
+
+
+def score_reference(
+    hold_out_path: str | Path, glossary_path: str | Path
+) -> Gate1Result:
+    """Score the official KO translations instead of agent output.
+
+    The ceiling any agent is graded against.  SERVICE.md §5 requires every hard
+    gate to measure this before it may reject a delivery: a threshold the
+    reference itself cannot clear is an instrument error, not a quality bar.
+
+    Gate 2 had this path from the start; gate 1 did not, which is why an
+    unreachable 95% survived several generations unnoticed.  Measured on the
+    2026-09-18 hold-out the reference scores 0.7469 — below the 0.95 threshold,
+    so gate 1 reports UNREACHABLE rather than a failure (see
+    :mod:`gate_ceiling`).
+    """
+    return score_hold_out(hold_out_path, glossary_path, predictions=None)
 
 
 def _count_term_checks(en_text: str, glossary: GlossaryFlat) -> int:

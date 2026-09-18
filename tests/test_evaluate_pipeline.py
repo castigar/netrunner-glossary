@@ -293,6 +293,16 @@ def test_main_runs_without_error_skip_llm_judge(tmp_path, capsys):
 # ---------------------------------------------------------------------------
 
 
+#: 대조군 예측. SERVICE.md §5 가 하드 게이트를 납품분에만 적용하므로, 빈 문자열을
+#: 대조군으로 쓰면 납품 0건이 되어 채점 대상이 사라진다. "납품됐지만 틀린" 예측을 쓴다.
+WRONG_PREDICTION = "이 칸은 일부러 틀린 번역이다"
+
+
+def wrong_preds(cards):
+    """납품은 됐으나 용어·기호를 하나도 보존하지 않은 예측 계열."""
+    return [WRONG_PREDICTION] * len(cards)
+
+
 def test_gate1_compliance_rate_changes_when_predictions_change(hold_out_cards):
     """Gate 1 compliance_rate must differ between reference and all-empty predictions.
 
@@ -306,7 +316,7 @@ def test_gate1_compliance_rate_changes_when_predictions_change(hold_out_cards):
     rate_ref = report_ref.verdict.gate1.compliance_rate
 
     # Use all-empty predictions — no KO term present, so all occurrences are violations
-    empty_preds = [""] * n
+    empty_preds = wrong_preds(hold_out_cards)
     report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
     rate_empty = report_empty.verdict.gate1.compliance_rate
 
@@ -336,7 +346,7 @@ def test_gate2_preservation_rate_changes_when_predictions_change(hold_out_cards)
     rate_ref = report_ref.verdict.gate2.preservation_rate  # 0.95
 
     # All-empty predictions — KO has no symbols, any EN symbol counts as missing
-    empty_preds = [""] * n
+    empty_preds = wrong_preds(hold_out_cards)
     report_empty = run_evaluation(HOLD_OUT, GLOSSARY, empty_preds, skip_llm_judge=True)
     rate_empty = report_empty.verdict.gate2.preservation_rate
 

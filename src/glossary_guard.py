@@ -106,6 +106,19 @@ def _term_in_text(term: str, text: str) -> bool:
     return bool(re.search(pattern, text, re.IGNORECASE))
 
 
+def _normalize_paren_spacing(text: str) -> str:
+    """괄호 앞뒤 공백만 정규화한다.
+
+    용어집에 ``hq -> '본부 (HQ)'``처럼 괄호 앞 공백이 들어간 표제어가 있는데 실제
+    번역문은 ``본부(HQ)``로 붙여 쓴다. 리터럴 부분문자열 비교에서는 공백 하나 때문에
+    불일치가 나고, hold-out 실측에서 이 한 가지가 공식 KO 위반 161건 중 13건이었다.
+
+    의도적으로 좁게 만든다 — 공백을 전부 지우면 어절 경계를 넘는 오탐이 생긴다.
+    여기서 손대는 것은 여는 괄호 앞과 닫는 괄호 뒤의 공백뿐이다.
+    """
+    return re.sub(r"\s*\(\s*", "(", text).replace(" )", ")")
+
+
 def check_glossary_compliance(
     en_text: str,
     ko_text: str,
@@ -129,11 +142,12 @@ def check_glossary_compliance(
         :class:`GlossaryCheckResult` — ``passed=True`` only when no violations.
     """
     violations: list[GlossaryViolation] = []
+    ko_text_norm = _normalize_paren_spacing(ko_text)
 
     for en_term, (ko_term, source) in glossary.items():
         if not _term_in_text(en_term, en_text):
             continue
-        if ko_term not in ko_text:
+        if _normalize_paren_spacing(ko_term) not in ko_text_norm:
             violations.append(
                 GlossaryViolation(en_term=en_term, expected_ko=ko_term, source=source)
             )

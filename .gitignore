@@ -14,3 +14,7 @@ assets/judgments.jsonl
 .ouroboros/context_pack.json
 .ouroboros/mechanical.toml
 .ouroboros_eval_artifact.md
+
+# 테스트·실행 산출물 (저장소 루트 오염 방지 — tests/conftest.py 참조)
+new_term_candidates.json
+approved.jsonl

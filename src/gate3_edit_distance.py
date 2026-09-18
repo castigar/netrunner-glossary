@@ -92,6 +92,7 @@ def score_hold_out(
     hold_out_path: str | Path,
     predictions: list[str],
     threshold: float | None = None,
+    cards: list[dict] | None = None,
 ) -> Gate3Result:
     """Score Hard Gate 3 over the hold-out set.
 
@@ -110,7 +111,8 @@ def score_hold_out(
         :class:`Gate3Result` with ``passed=True`` iff median_distance <= threshold.
     """
     effective_threshold = THRESHOLD if threshold is None else threshold
-    cards: list[dict] = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
+    if cards is None:
+        cards = json.loads(Path(hold_out_path).read_text(encoding="utf-8"))
 
     if len(cards) != len(predictions):
         raise ValueError(

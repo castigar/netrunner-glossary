@@ -46,6 +46,7 @@ from typing import Any, Optional
 import gate1_term_compliance
 import gate2_symbol_preservation
 import gate3_edit_distance
+import gate_ceiling
 import gate_verdict as gate_verdict_mod
 import obs_llm_judge
 from field_card_synthesis import ALL_CAUSES, FieldSynthesisReport, synthesize_field_to_card
@@ -364,6 +365,21 @@ class EvaluationReport:
     model_ids_used: list[str] = field(default_factory=list)
     provenance: Optional[RunProvenance] = None
     per_model_gates: list[PerModelGateNumbers] = field(default_factory=list)
+    # SERVICE.md §5 (2026-09-18): 채점 모집단 분리와 천장 검사
+    delivered_count: int = 0
+    withheld_count: int = 0
+    ceiling_verdicts: list[gate_ceiling.CeilingVerdict] = field(default_factory=list)
+
+    @property
+    def throughput(self) -> Optional[float]:
+        """처리율 = 납품 카드 / 전체. 번역 품질이 아니라 처리량 지표다."""
+        total = self.delivered_count + self.withheld_count
+        return self.delivered_count / total if total else None
+
+    @property
+    def unreachable_gates(self) -> list[str]:
+        """정답이 임계를 못 넘어 판정할 수 없는 게이트 목록."""
+        return [v.gate for v in self.ceiling_verdicts if v.verdict == gate_ceiling.UNREACHABLE]
 
     @property
     def gates_are_reportable(self) -> bool:
@@ -376,13 +392,21 @@ class EvaluationReport:
 
     @property
     def final_passed(self) -> Optional[bool]:
-        """Overall pass: the three hard gates AND the TM echo gate.
+        """Overall pass: the hard gates that are *reachable*, AND the TM echo gate.
 
         ``None`` when the run is not a real model run — no verdict is issued.
+
+        SERVICE.md §5: a gate whose reference ceiling is below its own threshold
+        reports UNREACHABLE and does not reject a delivery. Only FAIL blocks.
+        A threshold the official translation cannot clear is an instrument
+        error, and an instrument error must not be charged to the agent.
         """
         if not self.gates_are_reportable:
             return None
-        if not self.verdict.overall_passed:
+        if self.ceiling_verdicts:
+            if any(v.blocks_delivery for v in self.ceiling_verdicts):
+                return False
+        elif not self.verdict.overall_passed:
             return False
         if self.echo_gate_result is not None and not self.echo_gate_result.passed:
             return False
@@ -583,12 +607,26 @@ def run_evaluation(
     hold_out_path = Path(hold_out_path)
     glossary_path = Path(glossary_path)
 
+    # SERVICE.md §5 (2026-09-18): 채점 모집단은 납품된 예측뿐이다.
+    # 빈 예측은 "전 용어 누락 + 전 기호 누락"으로 계상돼 번역 품질이 아니라 처리율을
+    # 재게 만든다 — 실측에서 빈 예측 20장이 게이트1을 63.05%로, 게이트2를 82.0%로
+    # 끌어내렸고 같은 실행을 납품분으로만 채점하면 81.67% / 91.25%다.
+    # 미납품은 throughput 관측 지표와 empty_by_cause 로 따로 보고한다.
+    all_cards: list[dict] = json.loads(hold_out_path.read_text(encoding="utf-8"))
+    delivered_idx = [i for i, p in enumerate(predictions) if (p or "").strip()]
+    delivered_cards = [all_cards[i] for i in delivered_idx]
+    delivered_preds = [predictions[i] for i in delivered_idx]
+    delivered_count = len(delivered_idx)
+    withheld_count = len(all_cards) - delivered_count
+
     # Aggregation stage 3: the three gates score the pipeline_predictions series.
     # (gate_scoring_subject = pipeline_predictions; ko_text is never a prediction.)
     g1 = gate1_term_compliance.score_hold_out(
-        hold_out_path, glossary_path, predictions=predictions
+        hold_out_path, glossary_path, predictions=delivered_preds, cards=delivered_cards
     )
-    g2 = gate2_symbol_preservation.score_hold_out(hold_out_path, predictions=predictions)
+    g2 = gate2_symbol_preservation.score_hold_out(
+        hold_out_path, predictions=delivered_preds, cards=delivered_cards
+    )
 
     # Gate 3's threshold is a relation, not a constant: it is derived from the
     # tm_only_baseline series measured in THIS run and handed to the scorer, so
@@ -600,11 +638,39 @@ def run_evaluation(
         gate3_threshold_provenance = "measured_in_run"
 
     g3 = gate3_edit_distance.score_hold_out(
-        hold_out_path, predictions, threshold=gate3_derived_threshold
+        hold_out_path, delivered_preds, threshold=gate3_derived_threshold,
+        cards=delivered_cards,
     )
 
     # Aggregation stage 4: single combined verdict.
     verdict = gate_verdict_mod.combine(g1, g2, g3)
+
+    # 천장 검사 — 정답을 같은 채점기에 같은 모집단으로 통과시킨다.
+    # 정답이 임계를 못 넘으면 그 게이트는 불합격이 아니라 계측 무효다(SERVICE.md §5).
+    # 게이트 3은 여기 넣지 않는다: 정답을 정답과 비교하면 편집거리가 구조상 0이라
+    # 천장이 언제나 통과한다. 영원히 통과하는 검사는 신호가 아니라 장식이다.
+    ceiling_verdicts: list[gate_ceiling.CeilingVerdict] = []
+    if delivered_cards:
+        g1_ref = gate1_term_compliance.score_hold_out(
+            hold_out_path, glossary_path, predictions=None, cards=delivered_cards
+        )
+        g2_ref = gate2_symbol_preservation.score_hold_out(
+            hold_out_path, predictions=None, cards=delivered_cards
+        )
+        ceiling_verdicts = [
+            gate_ceiling.check(
+                "게이트 1 용어 준수율",
+                threshold=g1.threshold,
+                ceiling=g1_ref.compliance_rate,
+                agent=g1.compliance_rate,
+            ),
+            gate_ceiling.check(
+                "게이트 2 기호 보존율",
+                threshold=g2.threshold,
+                ceiling=g2_ref.preservation_rate,
+                agent=g2.preservation_rate,
+            ),
+        ]
 
     # Aggregation stage 1 (field level) and the empty-prediction cause table.
     # Every cause key is always present so the report lists all three counts,
@@ -695,6 +761,9 @@ def run_evaluation(
         model_ids_used=effective_model_ids,
         provenance=provenance,
         per_model_gates=per_model,
+        delivered_count=delivered_count,
+        withheld_count=withheld_count,
+        ceiling_verdicts=ceiling_verdicts,
     )
 
 
@@ -800,6 +869,33 @@ def print_evaluation_report(report: EvaluationReport) -> None:
     if report.gates_are_reportable:
         print(format_verdict(report.verdict))
         print(f"  용어집 LLM 판정 상태: {llm_judged_label}")
+
+        # SERVICE.md §5: 채점 모집단과 천장 검사
+        print()
+        print("=== 채점 모집단 ===")
+        total_cards = report.delivered_count + report.withheld_count
+        tp = report.throughput
+        print(
+            f"  하드 게이트 채점 대상: 납품 {report.delivered_count}건 / 전체 {total_cards}건"
+            + (f"  (처리율 {tp:.1%})" if tp is not None else "")
+        )
+        print(
+            f"  미납품 {report.withheld_count}건은 게이트 분모에서 제외하고 처리율로 보고한다"
+            " — '번역이 틀렸다'와 '번역이 없다'는 다른 실패다."
+        )
+
+        if report.ceiling_verdicts:
+            print()
+            print("=== 천장 검사 (공식 KO 정답을 같은 채점기·같은 모집단으로 채점) ===")
+            for cv in report.ceiling_verdicts:
+                print(gate_ceiling.format_line(cv))
+            unreachable = report.unreachable_gates
+            if unreachable:
+                print(
+                    f"  ※ 계측 무효: {', '.join(unreachable)}"
+                    " — 정답이 못 넘는 선은 품질 기준이 아니라 계측 오류이므로"
+                    " 납품 거부 근거로 쓰지 않는다."
+                )
 
         # (d) Gate threshold sources
         print()

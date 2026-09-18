@@ -14,6 +14,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+#: 저장소 기본 경로. 상대경로는 cwd 기준으로 풀리므로 테스트가 저장소 루트를
+#: 덮어쓰지 않도록 tests/conftest.py 가 이 두 상수를 tmp 로 돌린다.
+DEFAULT_APPROVED_STORE: "Path | str" = "approved.jsonl"
+DEFAULT_NEW_TERM_STORE: "Path | str" = "new_term_candidates.json"
+
 
 class ApprovedRecord(BaseModel):
     """One approved (or modified-then-approved) translation record."""
@@ -46,7 +51,7 @@ class ApprovedRecord(BaseModel):
 
 def append_approved(
     record: ApprovedRecord,
-    store_path: Path | str = "approved.jsonl",
+    store_path: Path | str | None = None,
 ) -> ApprovedRecord:
     """Append one approved translation record to the JSONL store.
 
@@ -60,7 +65,7 @@ def append_approved(
     Returns:
         The record as written (unchanged).
     """
-    store_path = Path(store_path)
+    store_path = Path(store_path if store_path is not None else DEFAULT_APPROVED_STORE)
     store_path.parent.mkdir(parents=True, exist_ok=True)
 
     with store_path.open("a", encoding="utf-8") as fh:
@@ -69,12 +74,12 @@ def append_approved(
     return record
 
 
-def load_approved(store_path: Path | str = "approved.jsonl") -> list[ApprovedRecord]:
+def load_approved(store_path: Path | str | None = None) -> list[ApprovedRecord]:
     """Read all approved records from the JSONL store.
 
     Returns an empty list when the file does not exist.
     """
-    store_path = Path(store_path)
+    store_path = Path(store_path if store_path is not None else DEFAULT_APPROVED_STORE)
     if not store_path.exists():
         return []
 
@@ -117,7 +122,7 @@ class NewTermCandidateRecord(BaseModel):
 
 def append_new_term_candidate(
     record: NewTermCandidateRecord,
-    store_path: Path | str = "new_term_candidates.json",
+    store_path: Path | str | None = None,
 ) -> NewTermCandidateRecord:
     """Append one new term candidate to new_term_candidates.json.
 
@@ -131,7 +136,7 @@ def append_new_term_candidate(
     Returns:
         The record as written (unchanged).
     """
-    store_path = Path(store_path)
+    store_path = Path(store_path if store_path is not None else DEFAULT_NEW_TERM_STORE)
     store_path.parent.mkdir(parents=True, exist_ok=True)
 
     if store_path.exists():
@@ -146,13 +151,13 @@ def append_new_term_candidate(
 
 
 def load_new_term_candidates(
-    store_path: Path | str = "new_term_candidates.json",
+    store_path: Path | str | None = None,
 ) -> list[NewTermCandidateRecord]:
     """Load all new term candidates from new_term_candidates.json.
 
     Returns an empty list when the file does not exist.
     """
-    store_path = Path(store_path)
+    store_path = Path(store_path if store_path is not None else DEFAULT_NEW_TERM_STORE)
     if not store_path.exists():
         return []
 

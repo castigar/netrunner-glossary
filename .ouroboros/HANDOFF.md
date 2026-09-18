@@ -548,7 +548,13 @@ uvx --python ">=3.12" --from "ouroboros-ai[tui]" ouroboros tui monitor --db-path
 | **phase2c-v3** | 같은 범위, Gen 5 입력 | 8 | **실행 완료.** 판정은 §2 — **AC6이 옛 게이트 설계를 전제하므로 재사용 전 v4가 필요하다(§4 작업 3)** |
 | phase3 | Issue 동기화 · Pages 검수 뷰 | 7 | 작성 완료, 미실행. `context_references`가 낡음 |
 
-`main`의 `.ouroboros/`에 Seed가 있다. **phase2a Seed만 `main`에 없고 `ooo/orch_a6bc6099bdae`에 있다.** `main` 작업 디렉터리에 같은 이름의 미추적 파일이 굴러다니는데 그건 **교정 전 옛 판본**이다 — 아무것도 읽지 않으므로 그냥 두되, Seed를 찾을 때 그것을 집지 않도록 주의한다.
+`main`의 `.ouroboros/`에 Seed가 전부 있다. **phase2a도 2026-09-18에 `main`으로 올렸다** —
+`ooo/orch_a6bc6099bdae`의 교정본(blob `eb7fc68`, 14,682바이트 147줄)을 그대로 커밋했다.
+
+그전까지 `main` 작업 디렉터리에 같은 이름의 **미추적 옛 판본**(13,941바이트 137줄)이
+굴러다녔고, 그게 브랜치를 오갈 때마다 "untracked working tree file would be overwritten"
+충돌을 일으켰다. 두 판본은 전체가 다르다(`diff`가 `1,137c1,147`). 교정본을 추적 상태로
+올려 그 충돌 부류를 없앴다. 옛 판본은 어디서도 읽지 않으므로 보존하지 않았다.
 
 ## 7. 아직 안 정한 것
 

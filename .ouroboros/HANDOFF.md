@@ -11,6 +11,7 @@
 - **구현 브랜치를 `main`으로 머지했다**(`c857fc9`, 2026-09-18 푸시). **이제 최신 코드는 `main`에 있다** — `ooo/ralph-3436c74…` @ `f160d4a`가 88파일 그대로 들어왔고 충돌은 없었다(사전 정리는 §6).
 - 머지된 `main`에서 **테스트 953개 통과**(실측, 141초). 브랜치 시절 수치는 `12c355a` 952, `d100840` 939였다.
 - `README.md`가 생겼다 — **번역가(최종 사용자) 관점의 진입점 문서**다. 지금 번역가가 실제로 쓸 수 있는 것은 MCP 도구 4개뿐이고 검토 큐·REST API·Issue 확정 절차는 미구현이라는 사실을 앞에 세웠다.
+- **3단계가 부분 착수됐다** — Pages 검수 뷰가 <https://castigar.github.io/netrunner-glossary/> 에 떠 있고 `[term-conflict]` Issue 12건이 열려 있다. 근거 카드가 없는 rule 경로 13건은 보류했다(§4 작업 5).
 - ⚠️ **검증 워크트리 `~/.ouroboros/worktrees/verify-gen5`가 그 브랜치를 점유하고 있다**(detached 아님 — `git worktree list`가 `f160d4a [ooo/ralph-3436c74…]`로 표시). Ralph는 브랜치가 다른 워크트리에 잡혀 있으면 시작하지 못한다(§5 체크리스트). 착수 전 그 워크트리에서 `git checkout --detach` + `git worktree prune`을 해야 한다.
 - 브랜치는 origin과 동기화돼 있다(2026-09-18 푸시). **미푸시 커밋은 없다.**
 - **이번 세션의 발견: 공식 KO 정답 번역이 하드 게이트 1·2를 통과하지 못한다**(천장 74.69% / 95.00%). 도달 불가능한 기준을 향해 7세대를 태우고 있었다. 이 발견을 반영해 **SERVICE.md §5를 개정했다**(`24a2ba4`).
@@ -111,6 +112,7 @@ tm_threshold_derivation: p20, provenance measured_in_run, 0.0323, ko_text 미사
 | 사전형 용언 역어 | 12 (`break → '서브루틴 깨다'`, `shuffle → '섞다'`) |
 | hold_out의 EN/KO 판본 불일치 | **10** / 100 (`breach` 5, `[interrupt]` EN만 4, `refill to` 1) |
 | 테스트가 저장소 루트 `new_term_candidates.json`을 픽스처로 덮어씀 | 20건, `ko_rendering` 전부 빈 문자열 |
+| `conflicts.json` rule 경로 항목에 근거 카드가 전무 | **13** / 25 (모든 역어의 `source_card_ids`가 빈 배열) |
 
 판본 불일치 실례 — KO가 틀린 게 아니라 **다른(이전) EN을 번역한 것**이다:
 
@@ -120,6 +122,11 @@ scrubber
       refill to 2 hosted credits.) You can spend hosted credits to pay trash costs.
   KO  2[recurring-credit] 카드를 폐기할 때만 이 크레딧을 사용한다.
 ```
+
+rule 경로 결함은 3단계를 직접 막았다 — 근거가 없으면 Issue 본문의 "등장 횟수 + 근거 카드 id"를
+채울 수 없고 검수자에게 판단할 재료가 남지 않는다. 덤으로 **제목 키가 고유하지 않다**: `code gate`가
+subtype·rule 양쪽에 있어 `[term-conflict] code gate`가 두 번 나온다. SERVICE.md가 정한 멱등 키가
+실제 데이터에서 깨지는 사례다. subtype 12건만 쓰면 충돌은 사라진다.
 
 ### Gen 5 실행 자체
 
@@ -439,7 +446,34 @@ v3에서 고칠 곳은 AC6 문언과 관련 제약, 그리고 **초벌 프롬프
 
 ### 작업 5 — phase3 (Issue 동기화 · Pages 검수 뷰)
 
-Seed는 있다 — `main`의 `.ouroboros/seed-phase3.yaml`(AC 7개). 다만 `brownfield_context.context_references[0].path`가 낡은 워크트리를 가리키므로 돌리기 전에 최신으로 고친다.
+**수동 준비분은 착수해서 `main`에 올렸다.** 자동화는 아직이다.
+
+| 항목 | 상태 |
+|---|---|
+| 라벨 `term-conflict` · `new-term-candidate` | 생성됨 |
+| GitHub Pages | <https://castigar.github.io/netrunner-glossary/> (`main`/`docs`, 빌드 완료) |
+| 검수 뷰 `docs/index.html` | `c7eb888`. 의존성 없는 단일 파일, 쓰기 경로 없음 |
+| `[term-conflict]` Issue | **12건** (`#1`~`#12`) — subtype 경로만 |
+| rule 경로 13건 | **보류** — 근거 카드가 전무해서(§2) 만들면 빈 Issue가 된다 |
+
+뷰는 두 JSON을 `raw.githubusercontent.com`에서 fetch한다. Pages 소스가 `main`/`docs`면 사이트 루트가
+`docs/`라서 `assets/`에 상대 경로로 닿지 못하기 때문이다. 덕분에 Pages 소스 선택과 데이터 위치가 분리된다.
+
+Issue 링크는 번호가 아니라 **제목 키 검색**으로 건다(`issues?q=is:issue "[term-conflict] barrier"`).
+번호는 동기화 시점에 정해지지만 제목 키는 멱등 키라서 Issue보다 뷰를 먼저 만들 수 있다. 실측으로
+`barrier` 검색이 `#1`에 적중하는 것을 확인했다.
+
+**위는 전부 일회성이다.** Seed가 요구하는 멱등 동기화 배치와 close 반영 경로는 미구현이다. Seed는
+`main`의 `.ouroboros/seed-phase3.yaml`(AC 7개)에 있고, `brownfield_context.context_references[0].path`가
+낡은 워크트리를 가리키므로 돌리기 전에 최신으로 고친다.
+
+착수 전에 닫아야 할 것 두 가지:
+
+1. **rule 경로가 `source_card_ids`를 채우게 고친다.** 그 전까지 13건은 만들지 않는다. 지금도
+   `conflicts.json`은 25건이라 뷰의 표에는 13행이 뜨고, 그 행의 "Issue 열기"는 빈 검색 결과로 간다.
+2. **`new_term_candidates.json`이 `.gitignore` 19행에 있다** — 그래서 뷰의 신규 용어 표는 영구히 빈다.
+   git 패턴에 슬래시가 없으면 경로 깊이와 무관하게 같은 이름을 전부 무시하므로 `assets/`로 옮겨도
+   소용없다. 배치가 다른 이름으로 발행하게 하는 쪽을 권한다(고칠 곳은 `CONFIG.newTermsPath` 한 줄).
 
 ## 5. 함정 모음 (직접 밟은 것들)
 

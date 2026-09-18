@@ -26,7 +26,7 @@
 | 코드 repo | `castigar/netrunner-glossary` (public — `.env`·토큰을 절대 커밋하지 않는다) |
 | 로컬 main | `C:\Users\SDS\Desktop\sds-ax-practice\mini_pjt` — **머지 후 구현 코드가 여기 있다**(`src/` 32 · `tests/` 35 · `assets/` · `README.md`) |
 | 검증 워크트리 | `C:\Users\SDS\.ouroboros\worktrees\verify-gen5` — **`ooo/ralph-3436c74…` 브랜치를 점유 중** @ `f160d4a` (detached 아님. Ralph 착수 전 해제 필요) |
-| 코퍼스 | `C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json` (`CORPUS_ROOT`) |
+| 코퍼스 | `C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json` (`CORPUS_ROOT`) — `Null-Signal-Games/netrunner-cards-json` **@ `69a34d7d425d08a785f64e508ac0f05019e11ad9`** (`main`, shallow depth-1). **다시 받을 땐 full clone 후 이 커밋으로 checkout 한다** — 코퍼스가 움직이면 하드 게이트 3의 clean corpus 980장과 seed 42 hold-out 100장 구성이 바뀌어 세대 간 점수 비교가 깨진다(`corpus-findings.md` §10) |
 | 파이썬 | `C:\Users\SDS\Desktop\sds-ax-practice\.venv\Scripts\python.exe` — 시스템 python 3.14에는 pytest가 없다 |
 | Bedrock 자격증명 | `sds-ax-practice/.env`. 가용 모델 목록은 `availableModelsOnBedrock.md` |
 | ouroboros CLI | `C:\Users\SDS\AppData\Local\uv\cache\archive-v0\qVBiREO0OQDRTyJo\Scripts\ouroboros.exe` (PATH에 없음) |

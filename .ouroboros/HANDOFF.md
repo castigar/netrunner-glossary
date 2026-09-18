@@ -8,7 +8,8 @@
 ## 0. 30초 요약
 
 - 기획 완료. 1·2단계 구현 완료. 파이프라인이 **처음으로 실제 모델로 전량 실행됐다.**
-- 최신 코드는 `ooo/ralph-3436c74545374d8296a877f5d4589e` @ `d100840`, **테스트 939개 통과**(실측). 검증용 워크트리가 `~/.ouroboros/worktrees/verify-gen5`에 그 커밋으로 열려 있다.
+- 최신 코드는 `ooo/ralph-3436c74545374d8296a877f5d4589e` @ **`f160d4a`**(`d100840` → `12c355a` → `e6ac521` → `f160d4a`). 마지막 실측 테스트 수는 `12c355a`에서 **952개 통과**이고 `d100840`에서는 939개였다. `f160d4a`는 문서 커밋이라 952에서 바뀌지 않았을 것으로 보이나 **재실측하지 않았다.**
+- ⚠️ **검증 워크트리 `~/.ouroboros/worktrees/verify-gen5`가 그 브랜치를 점유하고 있다**(detached 아님 — `git worktree list`가 `f160d4a [ooo/ralph-3436c74…]`로 표시). Ralph는 브랜치가 다른 워크트리에 잡혀 있으면 시작하지 못한다(§5 체크리스트). 착수 전 그 워크트리에서 `git checkout --detach` + `git worktree prune`을 해야 한다.
 - 브랜치는 origin과 동기화돼 있다(2026-09-18 푸시). **미푸시 커밋은 없다.**
 - **이번 세션의 발견: 공식 KO 정답 번역이 하드 게이트 1·2를 통과하지 못한다**(천장 74.69% / 95.00%). 도달 불가능한 기준을 향해 7세대를 태우고 있었다. 이 발견을 반영해 **SERVICE.md §5를 개정했다**(`24a2ba4`).
 - 남은 일은 그 개정을 **코드에 반영**하는 것이다. 게이트를 통과시키는 작업이 아니라 게이트가 무엇을 재는지 고치는 작업이다. **계측기와 평가 데이터는 사람이 고치고 제품 구현만 Seed에 맡긴다** — 이유는 §4 머리의 경계 표.
@@ -20,7 +21,7 @@
 |---|---|
 | 코드 repo | `castigar/netrunner-glossary` (public — `.env`·토큰을 절대 커밋하지 않는다) |
 | 로컬 main | `C:\Users\SDS\Desktop\sds-ax-practice\mini_pjt` |
-| 검증 워크트리 | `C:\Users\SDS\.ouroboros\worktrees\verify-gen5` (detached @ `d100840`) |
+| 검증 워크트리 | `C:\Users\SDS\.ouroboros\worktrees\verify-gen5` — **`ooo/ralph-3436c74…` 브랜치를 점유 중** @ `f160d4a` (detached 아님. Ralph 착수 전 해제 필요) |
 | 코퍼스 | `C:\Users\SDS\Desktop\netrunner-corpus\netrunner-cards-json` (`CORPUS_ROOT`) |
 | 파이썬 | `C:\Users\SDS\Desktop\sds-ax-practice\.venv\Scripts\python.exe` — 시스템 python 3.14에는 pytest가 없다 |
 | Bedrock 자격증명 | `sds-ax-practice/.env`. 가용 모델 목록은 `availableModelsOnBedrock.md` |
@@ -50,7 +51,7 @@ python src/run_pipeline.py --cards 10 --output out.jsonl \
 
 | 브랜치 | HEAD | origin | 내용 |
 |---|---|---|---|
-| **`ooo/ralph-3436c74…`** | **`d100840`** | ○ | **최신. 여기서 작업한다.** Gen 5 산출 10커밋, 테스트 939 |
+| **`ooo/ralph-3436c74…`** | **`f160d4a`** | ○ | **최신. 여기서 작업한다.** Gen 5 산출 10커밋(`d100840`) + 사람의 계측기 수정 3커밋(`12c355a`·`e6ac521`·`f160d4a`). `12c355a`에서 테스트 952 |
 | `main` | — | ○ | 기획 문서·Seed·골든 셋·이 문서 |
 | `ooo/ralph-c7ac3366…` | `31d3995` | ○ | Gen 4 결과. Gen 5의 기반 |
 | `ooo/ralph-6ec830bd…` | `1230fad` | ○ | Gen 3 결과 |
@@ -147,7 +148,9 @@ lineage `ralph-3436c74545374d8296a877f5d4589e`, generation 1. 10세대를 걸었
 
 ## 3.5 Seed v4 인터뷰에서 확정된 것 (2026-09-18, `interview_20260918_013149`)
 
-인터뷰가 진행 중이고 **미결 질문이 하나 열려 있다**(아래). 지금까지 확정된 것:
+**인터뷰는 2026-09-18에 종결됐다**(6라운드, ambiguity 0.08, MCP가 seed-ready 신호를 냈다).
+다만 **수락 게이트가 통과하지 못해 Seed를 아직 발행하지 않았다** — 차단 사유는 §3.6.
+확정된 것은 아래 ①~⑥이다(①②③은 라운드 1·2, ④⑤⑥은 라운드 4·5·6).
 
 **① 판정 기준 = 매 세대 독립적인 천장 대비 판정.** 세대 간 추세선은 약속하지 않는다.
 근거는 셋이다 — 추세선은 데이터 선택이 아니라 구현 주문이고(리포트 영속화·평가집합
@@ -208,13 +211,176 @@ lineage `ralph-3436c74545374d8296a877f5d4589e`, generation 1. 10세대를 걸었
   없어 지금은 제외 id를 스크립트로 뺀 산물이다. 사양 근거가 되려면 코드화가 선행돼야 한다(사람 일).
 - `evaluate_pipeline.main()`은 비영 종료코드를 내지 않아 **기계가 읽는 완료 신호가 없다.**
 
-### 열려 있는 인터뷰 질문
+### ④ 실행 전제 = 감독형 단일 실행 (라운드 3)
 
-> Seed v4를 **무인 Ralph 루프**가 스스로 판정하고 멈추는 것을 전제로 쓸 것인가(그러면
-> 정지 신호·재시작 안전성이 Seed 발행을 막는 선행 과제가 되고 AC가 자가 검증 가능해야
-> 한다), 아니면 **사람이 띄우고 결과를 직접 읽는 감독형 단일 실행**을 전제로 쓸 것인가?
+무인 Ralph 루프를 전제하지 않는다. 사람이 띄우고 결과를 직접 읽는다. 근거는 실적과
+불변식이다 — 이 호스트 EventStore 직접 집계로 **ralph 12건 created 중 완료 0 / 실패 11 /
+취소 1**이고(evaluate 8/10, execute_seed 5/9), `lineage.generation.completed`는 6 리니지에
+8회로 리니지당 평균 1.33세대다. 게다가 무인 자가판정은 순서 문제가 아니라 불변식 충돌이다 —
+게이트2를 기계가 판정하려면 유일한 기계 채널인 pytest에 실모델 호출과 hold_out 열람을
+넣어야 하고, 그러면 §5의 "자산 구축 입력에서 완전 배제"가 깨진다. `seed_content`는
+generation 1에서만 읽히므로 무인 다세대는 세대 2~N을 Seed v4 없이 돌린다.
 
-이 세션의 실질적 진전이 자율 루프가 아니라 표적 조사에서 나왔다는 점이 이 질문의 배경이다.
+단 "감독형이므로 정지 신호 불필요"는 받지 않는다. **JSON verdict 리포트 + 비영 종료코드는
+사람이 소유한 계측기 항목으로 만들되 발행 blocking에서는 뺀다**(§5의 "자기 보고와 실측이
+4회 중 2회만 일치" 때문). 반면 **90장 코드화는 blocking 선행 조건이다.** 무인 자가판정은
+v5 이후로 미룬다. 실행 시 `auto_evolve: false`를 명시적으로 넘긴다.
+
+### ⑤ 처리율 비후퇴 가드 = 미납품 card_id 집합 조건 (라운드 4)
+
+숫자를 Seed에 쓰지 않는다. **이 실행의 미납품 card_id 집합 ⊆ 기준 기록의 미납품 집합**이고
+기준에 없는 card_id가 1건이라도 미납품이면 통과 무효다(fail-closed). 부분집합이므로 "더
+많이 납품"은 허용하고 치환은 금지한다. 보조 증거 셋 — 자산 diff 0 / 미납품 전건 원인 분류 /
+건수 보존. `empty_cause`가 `model_invocation_failure`인 건이 1건이라도 있으면 불합격이
+아니라 **계측 무효(재실행)**다.
+
+**문언 함정 둘.** `new_term`은 `empty_cause` 값이 **아니다** —
+`field_card_synthesis.py`의 `EmptyPredictionCause`는 `tm_search_failure` /
+`guard_rejected_in_review_queue` / `approval_incomplete` / `model_invocation_failure`
+4값뿐이고 `new_term`은 `hold_reasons`에 산다. 코드로 참인 문장은
+`empty_cause == 'approval_incomplete'` **AND** `hold_reasons == ['new_term']`이다.
+그리고 관용 밴드를 두지 않는다 — `tests/test_tm_baseline.py`에 "이전 구현이 이 단언을
+[0.25, 0.55]로 넓혀 스스로 통과시켰다"는 기록이 있고, 같은 파일 `:57`이 `hold_out.json`이
+없으면 `pytest.skip`으로 **fail-open**한다.
+
+### ⑥ AC 8칸 배치와 기준 기록 (라운드 5·6)
+
+AC6을 두 칸으로 쪼개고 v3 AC7(3단 집계)을 계측층으로 흡수해 8칸을 유지한다. **혼합 슬롯을
+0개로 만든다** — `verdict_is_authoritative`가 슬롯 단위 필드라서, 밀폐 pytest 항목과 사람
+판정 항목을 한 슬롯에 섞으면 사람이 읽기 전까지 그 슬롯 전체가 unresolved가 된다.
+
+| 칸 | 내용 | 판정 주체 | 무효 분기 |
+|---|---|---|---|
+| 1 | 라우팅 — v3 AC1 승계 | 밀폐 pytest | 없음 |
+| 2 | 초벌 생성 + **기호를 개수까지 1:1 보존하라는 프롬프트 제약 추가** | 밀폐 pytest | 없음 |
+| 3 | 가드레일 5종 + 검토 큐 — v3 AC3 승계 | 밀폐 pytest | 없음 |
+| 4 | HITL interrupt + 차단형/기록형 — v3 AC4 승계 | 밀폐 pytest | 없음 |
+| 5 | 승인 후 resume + approved_store. **자산 diff 0으로 한 줄 확장** | 밀폐 pytest | 없음 |
+| 6 | 계측층 — 90장 실행·납품분 채점·게이트2 위반 0건·미납품 ⊆ 기준·3단 집계 흡수 | 밀폐 pytest | **있음** |
+| 7 | 보고층 — 게이트1 3열·처리율·원인별 건수·TM 에코·모델 내역 | 사람 판정 | 게이트1은 UNREACHABLE |
+| 8 | eval_autoresume — v3 AC8 승계(낡은 "테스트 없다" 서술 삭제) | 밀폐 pytest | 없음 |
+
+성공 = **8칸 전건 통과.** 하니스가 `ac_gate_mode="all"` / `ac_min_pass_ratio=1.0`이고
+오버라이드 호출부가 0건이며 `final_approved = all(ac.authoritative_pass)`이므로 "7/8이면
+성공"은 표현 자체가 불가능하다. "통과"의 뜻만 칸마다 고정한다 — 관찰 지표의 **값** 미달은
+실패가 아니고, 관찰 지표 **필드의 누락**은 7번 실패이며, 천장 미달·`model_invocation_failure`
+는 계측 무효로 통과도 실패도 아니다.
+
+**이미 구현된 셋은 AC가 아니라 constraints로 내린다** — 천장 검사 선행은 이미 커밋된 사람
+소유 코드다(`src/gate_ceiling.py`, `tests/test_gate_ceiling.py`, 커밋 `12c355a`·`e6ac521`).
+AC로 명령하면 Seed가 에이전트에게 자기를 채점하는 자를 다시 쓰라고 시키는 것이 된다.
+
+**기준 기록** = `data/throughput_baseline.json`, **Seed가 돌 브랜치에 커밋한다**(main에는
+`hold_out.json`이 없어 가드가 조용히 아무것도 읽지 않는다). 형식은
+`data/rule_terms_gold.json` 선례를 따르고 필드는 `population`(source·sha256·card_count
+90·excluded_card_ids 10개·exclusion_point `post_split_id_filter`·excluded_disposition
+`dropped_not_moved_to_train`) / `instrument`(glossary_path·glossary_sha256·commit·
+llm_judged·hold_triggers) / `withheld`(derivation·card_ids·count 19·empty_cause·
+hold_reasons) / `delivered_count` / `throughput` / `on_missing: "fail"`이다.
+**파일 자체의 해시는 파일 안에 넣지 않고 Seed 제약에 리터럴 sha256으로 박는다** — 하니스에
+쓰기 범위 제한 장치가 전혀 없고(`claude_permissions.py:35`가 `WORKSPACE_WRITE`를
+`acceptEdits`로 매핑, `write_scope`·`allowed_paths`·`protected_path`·`read_only_paths`
+검색 0건) Seed 텍스트만이 런 중 수정 불가이기 때문이다. 이 sha256은 측정값이 아니라
+**동결된 사람 입력의 정체성**이므로 결정 ③의 대상이 아니다 — 이 문장을 Seed에 명시한다.
+
+미납품 집합은 **사람이 90장 코드화 직후 `check_new_terms`를 오프라인 순수 함수로 한 번
+도출해 리터럴로 동결한다. 런 안에서 재도출하지 않는다.** 재도출을 판정 정의로 쓰면
+`AUTO_RESPONDER_HOLD_TRIGGERS`와 `new_term_guard`가 에이전트 소유 제품 코드이고 v3 AC4가
+토크나이저 변경을 명령하므로, 분류기를 바꾸면 기준선이 같이 움직여 `⊆`가 항상 참이 된다.
+실측상 파생 == 관측이다(100장 20건 / 90장 19건, 차이 1장은 `disrupter`로 제외 10 안).
+
+EN 개정 10장 가지치기는 **split 이후 id 배제**로 정확히 90장을 만든다. 코퍼스 조건으로
+올리면 980 → 970이 되어 seed 42 셔플이 달라지고 결정 ②("재분할하지 않는다")를 깬다.
+제외 10장은 train으로 옮기지 않고 버린다(train 880 유지 — 옮기면 phase-1 자산이 오염되고
+§5의 "hold-out은 자산 구축 입력에서 완전 배제"가 깨진다).
+
+**사람 선행 작업 순서** ① split-후 필터로 90장 `hold_out.json` 재발행 ② 100→90으로 움직이는
+테스트 갱신 ③ 90장에서 순수 도출 → 19건 일치 확인 ④ `throughput_baseline.json` 생성·커밋
+⑤ Seed 제약에 sha256 리터럴 기입 ⑥ Seed v4 발행.
+
+갱신할 테스트: `test_tm_baseline.py:67`(len 100→90, `:68`의 880은 유지),
+`test_gate1_term_compliance.py:223`, `test_gate2_symbol_preservation.py:402·420`,
+`test_gate3_edit_distance.py:263·275`, `test_evaluate_pipeline.py:109`(`gate3.n` 100→90)과
+`:127-128`(rate 0.95→1.0, 95/100→90/90 — **이것이 게이트2 천장 1.0 회귀 테스트가 된다**),
+`test_ac6_entry_point.py:129`. `tests/test_corpus_split.py`는 `:101-102`가 `build_split`
+함수 수준 호출이라 split-후 필터에서는 그대로 살아남는다(실측 확인). 이 갱신은 계측기
+작업이므로 **사람 몫**이다 — 빨간 트리로 Seed를 넘기면 에이전트의 첫 작업이 자기 채점기
+테스트 수정이 되어 §4 경계가 무력화된다.
+
+TM 베이스라인은 기준 기록에 담지 않는다 — 실측상 100장·90장 모두 median 0.3850이고
+게이트3 유도 임계 0.2695가 동일해 `BASELINE_MEDIAN 0.385 ± 0.025`가 그대로 생존한다.
+
+## 3.6 수락 게이트가 막은 것 — Seed 발행 전에 닫아야 한다
+
+MCP가 seed-ready를 냈지만 **3레인 수락 게이트가 통과하지 못했다.** `closer`는 `seed_ready`
+였으나 `contrarian`과 `gap_hunter`가 HIGH를 올렸고, 아래 넷은 **호스트가 직접 재현해
+확인했다.** 다음 세션은 여기서부터 시작한다.
+
+**1. 슬롯 6의 판정 주체가 스스로 모순이다 (최우선).** 라운드 3이 "AC6 밀폐층은 고정
+픽스처만 쓴다. Bedrock을 호출하지 않고 hold_out의 ko_text를 읽지 않는다"고 제약했는데,
+라운드 5가 슬롯 6(밀폐 pytest)에 90장 전량 실모델 실행이 필요한 항목을 넣었다. 채점
+*로직*은 픽스처로 검증 가능하지만(`gate2_symbol_preservation.score_*`는 `cards`와
+`predictions`를 함께 받으면 `hold_out.json`을 읽지 않는다 — 실측 확인) **이번 실행의 위반
+0건은 실모델 산출물이 있어야 잰다.** 그리고 슬롯 6은 전 이력에서 유일하게 `blocked`·
+`recovery_exhausted`를 기록한 슬롯이다(stall AC6 3회 / 나머지 각 1회 이하, judged failure
+AC6 2회). 선택지는 (a) 슬롯 6을 진짜 밀폐 항목만 남기고 종료 조건 판정을 사람 소유
+스크립트로 빼되 그 스크립트의 비영 종료코드를 발행 blocking으로 올린다 (b) 실모델을 pytest
+안에 허용하고 라운드 3 제약을 철회한다 (c) 슬롯 6을 사람 판정으로 내린다(fail-closed 포기).
+**미결.**
+
+**2. 미납품 card_id를 내보내는 코드가 없다.** 하드 가드가 card_id 집합 비교인데
+`evaluate_pipeline.py`는 `withheld_count`(숫자)만 내보낸다 — card_id 목록 배출 경로가 없다
+(실측 확인). 그리고 라운드 3이 JSON verdict 배출을 non-blocking으로 내렸다. **유일한 하드
+가드가 non-blocking 항목에 의존한다.** 1번과 함께 닫아야 한다.
+
+**3. diff-0 기준 커밋이 비어 있고 후보 `d100840`은 무효다.**
+`git diff --stat d100840..f160d4a -- src/` 실측: `gate1 +58` · `gate2 +4` · `gate3 +4` ·
+**`gate_ceiling.py +105`(신설)** · `evaluate_pipeline +125` · `glossary_guard +16` — 얼리려는
+목록 그 자체다. `d100840`을 기준으로 잡으면 가드가 t=0에 이미 위반이고 에이전트가 "고치는"
+방향은 사람의 계측기 수정을 되돌리는 것이다. 권장은 **사람 선행 작업(①~④) 완료 커밋의
+sha를 기준으로 Seed 제약에 리터럴로 박는 것**이다. 아울러 납품 판정
+(`evaluate_pipeline.py:631`)·원인 분류(`field_card_synthesis.py:156-172`)·차단형 분류
+경로에는 앵커가 전혀 없다. **미결.**
+
+**4. Seed가 돌 브랜치가 워크트리에 점유돼 있다.** §0·§1 참조. 착수 전 해제가 선행 조건이다.
+
+### 아직 닫히지 않은 그 밖의 미결
+
+- 계측 무효(재실행)의 횟수 상한. 상한이 없으면 `model_invocation_failure`가 무한 재실행의
+  합법적 출구가 되고, 그 원인 값을 기록하는 주체가 채점당하는 제품 코드 자신이다
+  (`run_pipeline.py:319`, 그리고 `field_card_synthesis.py`의 "생산자가 기록한 원인이 이긴다").
+- 용어집 결함 수정(§4 작업1-4)과 "채점용/주입용 용어집 분리"(§7-2)를 기준 기록 생성 전에
+  끝낼지. 역어(값) 수정은 표제어(키)를 바꾸지 않으므로 미납품 집합은 불변이어야 하지만,
+  키 구성을 바꾸는 분리안을 채택하면 기준 기록과 Seed의 sha 리터럴을 다시 찍어야 한다.
+  더 무거운 것 — 용어집 수정으로 **게이트1 천장이 0.95를 넘기면 게이트1이 UNREACHABLE을
+  벗어나 `final_passed`를 차단하기 시작한다**(`evaluate_pipeline.py`의 `blocks_delivery`
+  경로). Seed가 에이전트에게 개선을 금지한 게이트다. 무효/실패/보고 중 무엇으로 처리할지
+  정해야 한다.
+- **SERVICE.md 내부 모순** — §5는 게이트1을 관찰 지표로 강등했는데 §8(`:397`)은 여전히
+  "hold-out 100장, 하드 게이트 3개"라고 적혀 있다. v3 Seed의 goal 문장도 "하드 게이트 3개와
+  관찰 지표에 통과시켜"라고 명령한다. 둘 다 발행 전에 고쳐야 에이전트가 폐기된 기준을 쫓지
+  않는다(§4 작업3의 "goal은 그대로 둔다"도 함께 정정 대상).
+- §4 소유 표에 기준 기록 행 추가. 기준 기록은 계측기도 정답지도 아닌 **제4 자산 부류**
+  (에이전트의 과거 행동을 동결해 가드 기준선으로 쓰는 것)다. 미등재 자산은 표 논리상
+  "아무나"로 떨어져 Ralph가 자기가 채점받는 기준선을 소유하게 된다.
+- AC5 감시 목록 확장은 §4 작업3의 "나머지 AC 6개와 goal은 그대로 둔다"와 충돌한다.
+  재작성·이동 슬롯(2·6·7·8)은 새 `semantic_ac_key`를 발급해야 한다(`focus.py` 동결이 위치
+  기반이고 `evaluation_coverage`가 `ac_content` 축자 일치를 요구한다).
+- `withheld.card_ids`를 문자열 배열로 둘지 `{card_id, triggers, cause}` 객체 배열로 둘지.
+
+### 이어받는 방법
+
+인터뷰 상태는 `~/.ouroboros/data/interview_interview_20260918_013149.json`에 있다
+(status `completed`, 6라운드, ambiguity 0.082). 재개는
+
+```
+/ouroboros:interview 20260918_013149 resume
+```
+
+이지만 **이미 completed이므로 새 라운드가 아니라 위 §3.6 미결을 사람이 정하고 Seed를 직접
+쓰는 편이 빠르다.** `ooo seed`를 돌리려면 `session_id="interview_20260918_013149"`를 준다.
+단 §3.6의 1~4가 열려 있는 채로 발행하면 "초록불인데 측정당하는 쪽이 만든 초록불"이 될 수
+있다.
 
 ## 4. 다음에 할 일
 
@@ -253,6 +419,11 @@ lineage `ralph-3436c74545374d8296a877f5d4589e`, generation 1. 10세대를 걸었
 - 세 판정(§2)을 다시 돌려 기준선을 갱신한다
 
 ### 작업 3 — Seed v4를 쓴다
+
+> **2026-09-18 갱신** — 인터뷰가 끝나 v4의 내용은 **§3.5 ①~⑥에 확정돼 있다.** 아래 문단이
+> 말하는 "AC6 문언과 AC2만 고치고 나머지 6개는 그대로 둔다"는 **낡았다** — §3.5 ⑥이 AC6을
+> 두 칸으로 쪼개고 v3 AC7을 흡수하며 AC5·AC8 문언도 고친다. 발행 전에 닫아야 할 것은
+> **§3.6**에 있다.
 
 **`seed-phase2c-v3.yaml`의 AC6은 옛 게이트 설계를 명령한다** — 게이트 1을 ≥95% 하드 게이트로 전제한다. SERVICE.md가 바뀐 이상 그대로 다시 돌리면 에이전트가 폐기된 기준을 쫓는다. Gen 4에서 AC4가 반대말을 하고 있어 결정 ④가 구현되지 않았던 것과 같은 함정이다.
 

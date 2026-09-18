@@ -1,0 +1,65 @@
+[INFO] pipeline_predictions: 100 cards loaded (pending=20, empty=20)
+[INFO] HITL mode: eval_autoresume (is_human_approved=False)
+[INFO] Measuring tm_only_baseline for Gate 3 threshold derivation...
+[INFO] tm_only_baseline median edit distance: 0.4067
+=== HITL 실행 모드 (AC8) ===
+  모드: eval_autoresume
+  ※ 이 실행의 예측은 사람 승인을 거치지 않은 산출물입니다 (is_human_approved=False)
+  트리거 발화 건수: 120
+  자동 승인 건수:  100
+  자동 보류 건수:  20
+
+=== 실행 모드: REAL ===
+  1순위 모델: global.anthropic.claude-haiku-4-5-20251001-v1:0
+  실제 사용 모델: global.anthropic.claude-haiku-4-5-20251001-v1:0
+
+=== 예측 계열 (AC6) ===
+  게이트 채점 대상: pipeline_predictions (전체 파이프라인 출력 또는 제공된 예측) — 100건
+  tm_only_baseline: 게이트 3 임계 유도용 (실측 중앙 편집거리 0.4067, 100건)
+  두 계열은 같은 실행 안에서 이름으로 구분된다 (채점 대상은 pipeline_predictions).
+
+=== 하드 게이트 채점 결과 ===
+게이트 1 (용어 준수율):      미달  63.1% (기준 >= 95%)
+게이트 2 (기호 보존율):      미달  82.0% (기준 100%)
+게이트 3 (편집거리 중앙값):  통과  0.1771 (기준 <= 0.2846774193548387)
+
+최종 판정: 불합격 — 미달 게이트: 게이트 1, 게이트 2
+  용어집 LLM 판정 상태: 완료
+
+=== 게이트 임계 출처 ===
+  게이트 1 임계: SERVICE.md §5 명시값 >= 95%
+  게이트 2 임계: SERVICE.md §5 명시값 100%
+  ※ 게이트 2 미달: pipeline_predictions 실측 82.0% < 임계 100% — 모든 출력에 대해 미달이 예상됩니다.
+  게이트 3 임계: TM-only 베이스라인 측정값 0.4067 × 0.70 = 0.2847  (출처: measured_in_run, 미사용 모듈 상수: 0.2695)
+  ※ 게이트 3 판정에 실제로 쓰인 임계: 0.2847
+
+=== 보류 현황 (승인 전 초벌 채점) ===
+  HITL interrupt 보류: 20건 / 100건  (20.0%)
+
+=== 빈 예측 원인별 건수 (필드 단위) ===
+  TM 검색 실패 (tm_search_failure): 0건
+  가드 실패로 검토 큐 잔류 (guard_rejected_in_review_queue): 0건
+  승인 미완 (approval_incomplete): 20건
+  Bedrock 모델 호출 실패 (model_invocation_failure): 0건
+  합계: 20건 — 정답 ko_text 대체 없음 (reference_leakage_ban)
+
+=== 3단 집계: 필드→카드 합성 (AC6/AC7) ===
+  1단 필드별: 준수 145건 / 위반 20건 (총 165개 (카드 id, 필드) 쌍)
+  2단 카드별: 준수 80건 / 위반 20건 (총 100장)  (80.0%)  — 모든 필드가 준수일 때만 카드 준수
+  3단 게이트별 비율/합격: 게이트1 63.1% / 게이트2 82.0% / 게이트3 중앙값 0.1771
+  4단 최종 판정(gate_verdict.combine): 불합격
+
+=== TM 에코 게이트 (AC6 — 회귀 카나리아) ===
+  결과: 통과
+  실측 에코율: 1/145 = 0.007
+  정당한 우연일치율 (TM top-1 == 참조 KO): 1/145 = 0.007
+  ECHO_FLOOR (정책 하한): 0.05
+  임계 = max(ECHO_FLOOR, 우연일치율) = 0.050
+  분모 n = 145  (tm_hits 존재 AND draft_ko 비어 있지 않은 레코드)
+  ※ 이 게이트는 적대적 방어 장치가 아니라 프롬프트·검색 회귀 카나리아입니다. 문자 하나로 회피되며, 스텁 실행 방어는 진입구 봉쇄(--llm-model 필수)가 담당합니다.
+  실행 모드: real  모델: global.anthropic.claude-haiku-4-5-20251001-v1:0
+
+=== 최종 판정(하드 게이트 3 + TM 에코 게이트): 불합격 ===
+
+=== 관찰 지표 (obs_llm_judge) ===
+  건너뜀 (--skip-llm-judge)

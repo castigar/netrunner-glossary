@@ -1,0 +1,608 @@
+[
+  {
+    "en_term": "barrier",
+    "ko_variants": [
+      "방벽",
+      "장벽"
+    ],
+    "source_card_ids": {
+      "방벽": [
+        "heimdall_1_0",
+        "ice_wall",
+        "wall_of_static",
+        "wall_of_thorns",
+        "snowflake",
+        "tmi",
+        "tyrant",
+        "eli_1_0",
+        "bastion",
+        "heimdall_2_0",
+        "himitsu_bako",
+        "wotan",
+        "paper_wall",
+        "curtain_wall",
+        "wraparound",
+        "hive",
+        "rainbow",
+        "galahad",
+        "next_silver",
+        "ashigaru",
+        "changeling",
+        "markus_1_0",
+        "asteroid_belt",
+        "fire_wall",
+        "orion",
+        "meru_mati",
+        "quicksand",
+        "pachinko",
+        "spiderweb",
+        "resistor",
+        "bailiff",
+        "vanilla"
+      ],
+      "장벽": [
+        "hadrians_wall"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "code gate",
+    "ko_variants": [
+      "코드 게이트",
+      "코드게이트"
+    ],
+    "source_card_ids": {
+      "코드 게이트": [
+        "cell_portal",
+        "chum",
+        "enigma",
+        "tollbooth",
+        "sensei",
+        "pop_up_window",
+        "viper",
+        "bullfrog",
+        "hourglass",
+        "salvage",
+        "datapike",
+        "minelayer",
+        "viktor_2_0",
+        "next_bronze",
+        "hudson_1_0",
+        "ireress",
+        "rsvp",
+        "yagura",
+        "gyri_labyrinth",
+        "marker",
+        "quandary",
+        "inazuma",
+        "rainbow",
+        "shiro",
+        "lotus_field",
+        "iq",
+        "wendigo",
+        "merlin",
+        "builder",
+        "checkpoint",
+        "orion",
+        "wormhole",
+        "bandwidth",
+        "crick",
+        "turing",
+        "clairvoyant_monitor",
+        "little_engine",
+        "lockdown",
+        "archangel",
+        "tl_dr",
+        "interrupt_0",
+        "harvester",
+        "upayoga",
+        "red_tape",
+        "waiver",
+        "magnet",
+        "fairchild_1_0",
+        "aiki",
+        "fairchild_2_0",
+        "dna_tracker",
+        "fairchild_3_0"
+      ],
+      "코드게이트": [
+        "viktor_1_0",
+        "ravana_1_0"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "connection",
+    "ko_variants": [
+      "연결",
+      "장소"
+    ],
+    "source_card_ids": {
+      "연결": [
+        "data_dealer",
+        "decoy",
+        "the_helpful_ai",
+        "compromised_employee",
+        "joshua_b",
+        "inside_man",
+        "scrubber",
+        "underworld_contact",
+        "kati_jones",
+        "mr_li",
+        "professional_contacts",
+        "the_source",
+        "john_masanori",
+        "raymond_flint",
+        "woman_in_the_red_dress",
+        "tallie_perrault",
+        "fall_guy",
+        "donut_taganes",
+        "oracle_may",
+        "theophilius_bagbiter",
+        "tri_maf_contact",
+        "rachel_beckman",
+        "the_supplier",
+        "human_first",
+        "stim_dealer",
+        "paige_piper",
+        "muertos_gang_member",
+        "street_peddler",
+        "drug_dealer",
+        "film_critic",
+        "dr_lovegood",
+        "jak_sinclair",
+        "tech_trader",
+        "akshara_sareen",
+        "councilman",
+        "political_operative",
+        "patron",
+        "guru_davinder",
+        "liberated_chela",
+        "bhagat",
+        "hernando_cortez",
+        "beth_kilrain_chang",
+        "first_responders"
+      ],
+      "장소": [
+        "aesops_pawnshop"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "initiative",
+    "ko_variants": [
+      "계획",
+      "공공"
+    ],
+    "source_card_ids": {
+      "계획": [
+        "astroscript_pilot_program",
+        "nisei_mk_ii",
+        "mandatory_upgrades",
+        "restructured_datapool",
+        "director_haas_pet_project",
+        "efficiency_committee",
+        "veterans_program",
+        "the_future_perfect",
+        "bifrost_array",
+        "underway_renovation",
+        "hollywood_renovation",
+        "the_future_is_now",
+        "global_food_initiative",
+        "rebranding_team",
+        "voting_machine_initiative",
+        "dedicated_neural_net",
+        "puppet_master"
+      ],
+      "공공": [
+        "oaktown_renovation"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "location",
+    "ko_variants": [
+      "연결",
+      "장소",
+      "지역"
+    ],
+    "source_card_ids": {
+      "연결": [
+        "aesops_pawnshop"
+      ],
+      "장소": [
+        "crash_space",
+        "wyldside",
+        "personal_workshop",
+        "new_angeles_city_hall",
+        "duggars",
+        "order_of_sol",
+        "angel_arena",
+        "earthrise_hotel",
+        "gene_conditioning_shoppe",
+        "london_library",
+        "off_campus_apartment",
+        "tyson_observatory",
+        "chrome_parlor",
+        "hunting_grounds",
+        "wasteland",
+        "artist_colony",
+        "chatterjee_university",
+        "bazaar",
+        "salsette_slums",
+        "temple_of_the_liberated_mind"
+      ],
+      "지역": [
+        "wireless_net_pavilion"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "priority",
+    "ko_variants": [
+      "긴급",
+      "우선 사항",
+      "우선사항"
+    ],
+    "source_card_ids": {
+      "긴급": [
+        "early_bird"
+      ],
+      "우선 사항": [
+        "cyber_threat",
+        "paper_tripping",
+        "social_engineering",
+        "fisk_investment_seminar",
+        "power_to_the_people",
+        "making_an_entrance"
+      ],
+      "우선사항": [
+        "three_steps_ahead"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "public",
+    "ko_variants": [
+      "계획",
+      "공공"
+    ],
+    "source_card_ids": {
+      "계획": [
+        "oaktown_renovation"
+      ],
+      "공공": [
+        "underway_renovation",
+        "hollywood_renovation",
+        "new_construction"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "sentry",
+    "ko_variants": [
+      "방벽",
+      "파수"
+    ],
+    "source_card_ids": {
+      "방벽": [
+        "ichi_1_0"
+      ],
+      "파수": [
+        "archer",
+        "data_raven",
+        "hunter",
+        "matrix_analyzer",
+        "neural_katana",
+        "rototurret",
+        "shadow",
+        "caduceus",
+        "draco",
+        "janus_1_0",
+        "sherlock_1_0",
+        "woodcutter",
+        "uroboros",
+        "data_hound",
+        "burke_bugs",
+        "flare",
+        "ichi_2_0",
+        "zed_1_0",
+        "grim",
+        "swarm",
+        "muckraker",
+        "swordsman",
+        "snoop",
+        "fenris",
+        "tsurugi",
+        "shinobi",
+        "guard",
+        "komainu",
+        "pup",
+        "rainbow",
+        "susanoo_no_mikoto",
+        "taurus",
+        "information_overload",
+        "lancelot",
+        "architect",
+        "mamba",
+        "gemini",
+        "lycan",
+        "sagittarius",
+        "errand_boy",
+        "troll",
+        "virgo",
+        "orion",
+        "searchlight",
+        "cortex_lock",
+        "negotiator",
+        "next_gold",
+        "gutenberg",
+        "enforcer_1_0",
+        "tour_guide",
+        "assassin",
+        "news_hound",
+        "turnpike",
+        "vikram_1_0",
+        "cobra",
+        "brainstorm",
+        "chetana",
+        "chrysalis",
+        "sherlock_2_0"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "stealth",
+    "ko_variants": [
+      "가상체",
+      "스텔스"
+    ],
+    "source_card_ids": {
+      "가상체": [
+        "net_mercur"
+      ],
+      "스텔스": [
+        "cloak",
+        "lockpick",
+        "dyson_fractal_generator",
+        "silencer",
+        "ghost_runner"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "tracer",
+    "ko_variants": [
+      "추격자",
+      "추적자"
+    ],
+    "source_card_ids": {
+      "추격자": [
+        "data_raven",
+        "matrix_analyzer"
+      ],
+      "추적자": [
+        "hunter",
+        "ichi_1_0",
+        "shadow",
+        "caduceus",
+        "draco",
+        "sherlock_1_0",
+        "viper",
+        "uroboros",
+        "data_hound",
+        "salvage",
+        "flare",
+        "ichi_2_0",
+        "viktor_2_0",
+        "muckraker",
+        "snoop",
+        "shinobi",
+        "taurus",
+        "information_overload",
+        "gemini",
+        "sagittarius",
+        "virgo",
+        "checkpoint",
+        "searchlight",
+        "gutenberg",
+        "archangel",
+        "assassin",
+        "news_hound",
+        "resistor",
+        "turnpike",
+        "vikram_1_0",
+        "waiver",
+        "sherlock_2_0"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "virtual",
+    "ko_variants": [
+      "가상체",
+      "스텔스"
+    ],
+    "source_card_ids": {
+      "가상체": [
+        "ice_carver",
+        "the_helpful_ai",
+        "xanadu",
+        "data_leak_reversal",
+        "ice_analyzer",
+        "grifter",
+        "woman_in_the_red_dress",
+        "eden_shard",
+        "ghost_runner",
+        "hades_shard",
+        "fester",
+        "utopia_shard",
+        "data_folding",
+        "virus_breeding_ground",
+        "gang_sign",
+        "fan_site",
+        "rolodex",
+        "spoilers",
+        "ddos",
+        "always_be_running",
+        "globalsec_security_clearance",
+        "hunting_grounds",
+        "neutralize_all_threats",
+        "safety_first",
+        "wasteland",
+        "street_magic",
+        "the_turning_wheel",
+        "the_black_file",
+        "find_the_truth"
+      ],
+      "스텔스": [
+        "net_mercur"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "weapon",
+    "ko_variants": [
+      "무장",
+      "폭탄"
+    ],
+    "source_card_ids": {
+      "무장": [
+        "unregistered_s_w_35"
+      ],
+      "폭탄": [
+        "emp_device"
+      ]
+    },
+    "source": "subtype"
+  },
+  {
+    "en_term": "hand size",
+    "ko_variants": [
+      "최대 핸드",
+      "최대 핸드 크기"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "maximum hand",
+    "ko_variants": [
+      "최대 핸드",
+      "최대 핸드 크기"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "pool",
+    "ko_variants": [
+      "크레딧 풀",
+      "풀"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "spend [click]",
+    "ko_variants": [
+      "비용 [click] 쓰다",
+      "추가 비용 [click]"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "trash cost",
+    "ko_variants": [
+      "카드 폐기 비용",
+      "폐기 비용"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "faceup",
+    "ko_variants": [
+      "앞면",
+      "앞면 설치"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "your turn begins",
+    "ko_variants": [
+      "차례 시작",
+      "차례 시작 때"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "end",
+    "ko_variants": [
+      "런 종료",
+      "종료"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "code gate",
+    "ko_variants": [
+      "게이트",
+      "코드 게이트"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "gate",
+    "ko_variants": [
+      "게이트",
+      "코드 게이트"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "spend",
+    "ko_variants": [
+      "비용 [click]",
+      "비용 [click] 쓰다",
+      "쓰다"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "advancement tokens",
+    "ko_variants": [
+      "발전 수",
+      "발전 토큰"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  },
+  {
+    "en_term": "runs",
+    "ko_variants": [
+      "런 수행",
+      "수행"
+    ],
+    "source_card_ids": {},
+    "source": "rule"
+  }
+]

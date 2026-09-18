@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>용어 확정 대기 목록 — Netrunner 번역</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --line: #d1d9e0;
+    --accent: #0969da; --chip: #f6f8fa; --warn-bg: #fff8c5; --warn-line: #d4a72c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #e6edf3; --muted: #9198a1; --line: #3d444d;
+      --accent: #4493f8; --chip: #161b22; --warn-bg: #282215; --warn-line: #bb8009;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.15rem; margin: 2.5rem 0 .5rem; }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
+  .note {
+    background: var(--warn-bg); border-left: 3px solid var(--warn-line);
+    padding: .75rem 1rem; margin: 0 0 2rem; font-size: .9rem;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  code { background: var(--chip); padding: .1rem .35rem; border-radius: 3px; font-size: .9em; }
+  .chip {
+    display: inline-block; background: var(--chip); border: 1px solid var(--line);
+    border-radius: 999px; padding: .05rem .5rem; font-size: .8rem; color: var(--muted);
+  }
+  .variant { display: block; margin-bottom: .2rem; }
+  .variant:last-child { margin-bottom: 0; }
+  a { color: var(--accent); }
+  .state { color: var(--muted); padding: 1rem 0; }
+  .cards { color: var(--muted); font-size: .82rem; word-break: break-all; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>용어 확정 대기 목록</h1>
+  <p class="sub">Android: Netrunner EN→KO 번역 보조 — 읽기 전용 검수 뷰</p>
+
+  <div class="note">
+    <strong>이 페이지에서는 확정할 수 없습니다.</strong>
+    확정은 각 행의 Issue에서 채택할 역어의 체크박스를 고르고 Issue를 close 하는 것으로 성립합니다.
+    다음 배치가 closed + 체크된 Issue를 읽어 용어집에 반영합니다.
+  </div>
+
+  <h2>용어 충돌 <span class="chip" id="conflict-count">…</span></h2>
+  <div id="conflicts" class="state">불러오는 중…</div>
+
+  <h2>신규 용어 후보 <span class="chip" id="newterm-count">…</span></h2>
+  <div id="newterms" class="state">불러오는 중…</div>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+const CONFIG = {
+  repo: "castigar/netrunner-glossary",
+  branch: "main",
+  conflictsPath: "assets/conflicts.json",
+  // 주의: 저장소 루트의 new_term_candidates.json 은 .gitignore 대상이라
+  // 배치가 추적 가능한 경로로 따로 발행해야 한다. 그 경로가 정해지면 여기를 고친다.
+  newTermsPath: "new_term_candidates.json",
+};
+
+const raw = (path) =>
+  `https://raw.githubusercontent.com/${CONFIG.repo}/${CONFIG.branch}/${path}`;
+
+const issueLink = (titleKey) =>
+  `https://github.com/${CONFIG.repo}/issues?q=` +
+  encodeURIComponent(`is:issue "${titleKey}"`);
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function loadJSON(path) {
+  const res = await fetch(raw(path), { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function renderConflicts(rows) {
+  const body = rows.map((row) => {
+    const key = `[term-conflict] ${row.en_term}`;
+    const variants = row.ko_variants.map((v) => {
+      const ids = (row.source_card_ids || {})[v] || [];
+      return `<span class="variant">${esc(v)} <span class="chip">${ids.length}회</span></span>`;
+    }).join("");
+    const sample = Object.values(row.source_card_ids || {}).flat().slice(0, 4);
+    return `<tr>
+      <td><code>${esc(row.en_term)}</code></td>
+      <td><span class="chip">${esc(row.source || "-")}</span></td>
+      <td>${variants}</td>
+      <td class="cards">${sample.map(esc).join(", ")}${sample.length < Object.values(row.source_card_ids || {}).flat().length ? " …" : ""}</td>
+      <td><a href="${issueLink(key)}" target="_blank" rel="noopener">Issue 열기</a></td>
+    </tr>`;
+  }).join("");
+
+  return `<table>
+    <thead><tr><th>EN 용어</th><th>출처</th><th>후보 역어</th><th>근거 카드</th><th></th></tr></thead>
+    <tbody>${body}</tbody>
+  </table>`;
+}
+
+function renderNewTerms(records) {
+  const grouped = new Map();
+  for (const r of records) {
+    const g = grouped.get(r.en_term) || { en_term: r.en_term, renderings: new Map(), fields: new Set(), first: r.submitted_at };
+    if (r.ko_rendering) g.renderings.set(r.ko_rendering, (g.renderings.get(r.ko_rendering) || 0) + 1);
+    if (r.source_field) g.fields.add(r.source_field);
+    if (r.submitted_at && r.submitted_at < g.first) g.first = r.submitted_at;
+    g.count = (g.count || 0) + 1;
+    grouped.set(r.en_term, g);
+  }
+
+  const body = [...grouped.values()].map((g) => {
+    const key = `[new-term] ${g.en_term}`;
+    const renderings = [...g.renderings.entries()]
+      .map(([ko, n]) => `<span class="variant">${esc(ko)} <span class="chip">${n}회</span></span>`).join("")
+      || '<span class="chip">역어 미기록</span>';
+    return `<tr>
+      <td><code>${esc(g.en_term)}</code></td>
+      <td>${renderings}</td>
+      <td>${g.count}</td>
+      <td><span class="chip">${[...g.fields].map(esc).join(", ") || "-"}</span></td>
+      <td class="cards">${esc((g.first || "").slice(0, 10))}</td>
+      <td><a href="${issueLink(key)}" target="_blank" rel="noopener">Issue 열기</a></td>
+    </tr>`;
+  }).join("");
+
+  return `<table>
+    <thead><tr><th>EN 용어</th><th>승인 번역의 KO 표기</th><th>등장</th><th>필드</th><th>최초 제출</th><th></th></tr></thead>
+    <tbody>${body}</tbody>
+  </table>`;
+}
+
+async function section(elId, countId, path, render, emptyMsg) {
+  const el = document.getElementById(elId);
+  const countEl = document.getElementById(countId);
+  try {
+    const data = await loadJSON(path);
+    if (data === null) {
+      el.textContent = `${emptyMsg} (${path} 없음)`;
+      countEl.textContent = "0건";
+      return;
+    }
+    if (!data.length) {
+      el.textContent = emptyMsg;
+      countEl.textContent = "0건";
+      return;
+    }
+    el.className = "";
+    el.innerHTML = render(data);
+    countEl.textContent = `${data.length}건`;
+  } catch (err) {
+    el.textContent = `불러오지 못했습니다: ${err.message}`;
+    countEl.textContent = "-";
+  }
+}
+
+section("conflicts", "conflict-count", CONFIG.conflictsPath, renderConflicts, "확정 대기 중인 충돌이 없습니다.");
+section("newterms", "newterm-count", CONFIG.newTermsPath, renderNewTerms, "확정 대기 중인 신규 용어가 없습니다.");
+
+document.getElementById("footer").innerHTML =
+  `데이터 출처: <code>${CONFIG.repo}</code> 브랜치 <code>${CONFIG.branch}</code> · ` +
+  `조회 시각 ${new Date().toLocaleString("ko-KR")}`;
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@
 - **구현 브랜치를 `main`으로 머지했다**(`c857fc9`, 2026-09-18 푸시). **이제 최신 코드는 `main`에 있다** — `ooo/ralph-3436c74…` @ `f160d4a`가 88파일 그대로 들어왔고 충돌은 없었다(사전 정리는 §6).
 - 머지된 `main`에서 **테스트 953개 통과**(실측, 141초). 브랜치 시절 수치는 `12c355a` 952, `d100840` 939였다.
 - `README.md`가 생겼다 — **번역가(최종 사용자) 관점의 진입점 문서**다. 지금 번역가가 실제로 쓸 수 있는 것은 MCP 도구 4개뿐이고 검토 큐·REST API·Issue 확정 절차는 미구현이라는 사실을 앞에 세웠다.
+  ⚠️ **그 상태 표가 3단계 부분 착수로 어긋났다** — Pages 검수 뷰는 이미 번역가가 열어볼 수 있는데 README는 `GitHub Issues 용어 확정 절차 · 미구현`으로 적고 있다. 자동 동기화·close 반영은 여전히 없으므로 "수동 일회성"으로 고쳐 쓴다. 번역가가 읽는 문서라 방치하면 쓸 수 있는 도구를 못 쓰게 만든다.
 - **3단계가 부분 착수됐다** — Pages 검수 뷰가 <https://castigar.github.io/netrunner-glossary/> 에 떠 있고 `[term-conflict]` Issue 12건이 열려 있다. 근거 카드가 없는 rule 경로 13건은 보류했다(§4 작업 5).
 - ⚠️ **검증 워크트리 `~/.ouroboros/worktrees/verify-gen5`가 그 브랜치를 점유하고 있다**(detached 아님 — `git worktree list`가 `f160d4a [ooo/ralph-3436c74…]`로 표시). Ralph는 브랜치가 다른 워크트리에 잡혀 있으면 시작하지 못한다(§5 체크리스트). 착수 전 그 워크트리에서 `git checkout --detach` + `git worktree prune`을 해야 한다.
 - 브랜치는 origin과 동기화돼 있다(2026-09-18 푸시). **미푸시 커밋은 없다.**
@@ -582,7 +583,7 @@ uvx --python ">=3.12" --from "ouroboros-ai[tui]" ouroboros tui monitor --db-path
 | phase2b | 하드 게이트 채점 · 관찰 지표 | 5 | 실행 완료, 평가 2/5 |
 | phase2c · v2 | 온라인 파이프라인 본체 | 6→9 / 8 | 실행 완료 (Gen 1~4) |
 | **phase2c-v3** | 같은 범위, Gen 5 입력 | 8 | **실행 완료.** 판정은 §2 — **AC6이 옛 게이트 설계를 전제하므로 재사용 전 v4가 필요하다(§4 작업 3)** |
-| phase3 | Issue 동기화 · Pages 검수 뷰 | 7 | 작성 완료, 미실행. `context_references`가 낡음 |
+| phase3 | Issue 동기화 · Pages 검수 뷰 | 7 | 작성 완료, **미실행**. 수동 준비분만 착수됨 — 라벨·Pages·Issue 12건(§4 작업 5). `context_references`가 낡음 |
 
 `main`의 `.ouroboros/`에 Seed가 전부 있다. **phase2a도 2026-09-18에 `main`으로 올렸다** —
 `ooo/orch_a6bc6099bdae`의 교정본(blob `eb7fc68`, 14,682바이트 147줄)을 그대로 커밋했다.
